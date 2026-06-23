@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}历史记录 - 适老化设施维护优先级评估系统{% endblock %}
+
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
+    <h2>📜 历史记录</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <a href="{{ url_for('api_export_csv') }}" class="btn btn-sm btn-secondary">📥 导出 CSV</a>
+        <button class="btn btn-sm btn-danger" onclick="confirmClear()">🗑 清空全部</button>
+    </div>
+</div>
+
+<!-- 筛选栏 -->
+<div class="filter-bar" style="margin-bottom:16px;">
+    <span style="font-size:13px;font-weight:600;">筛选：</span>
+    <select class="form-select" style="width:auto;" id="risk-filter" onchange="loadHistory(1)">
+        <option value="">全部风险等级</option>
+        <option value="高风险">高风险</option>
+        <option value="中风险">中风险</option>
+        <option value="低风险">低风险</option>
+    </select>
+    <select class="form-select" style="width:auto;" id="priority-filter" onchange="loadHistory(1)">
+        <option value="">全部优先级</option>
+        <option value="[!!!] 最高优先">最高优先</option>
+        <option value="[!!]  高度优先">高度优先</option>
+        <option value="[*]   一般关注">一般关注</option>
+        <option value="[ ]   定期巡检即可">定期巡检即可</option>
+    </select>
+    <span id="total-count" style="font-size:13px;color:var(--text-secondary);margin-left:auto;"></span>
+</div>
+
+<!-- 表格 -->
+<div class="card" style="padding:0;">
+    <div style="overflow-x:auto;">
+        <table class="history-table">
+            <thead>
+                <tr>
+                    <th>时间</th>
+                    <th>设施名称</th>
+                    <th>类型</th>
+                    <th>风险等级</th>
+                    <th>优先级</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="history-tbody">
+                <tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted);">加载中...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 分页 -->
+<div class="pagination" id="pagination"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentPage = 1;
+
+async function loadHistory(page) {
+    currentPage = page;
+    const risk = document.getElementById('risk-filter').value;
+    const priority = document.getElementById('priority-filter').value;
+    const params = new URLSearchParams({ page, per_page: 20 });
+    if (risk) params.append('risk', risk);
+    if (priority) params.append('priority', priority);
+
+    try {
+        const resp = await fetch(`/api/history/list?${params}`);
+        const data = await resp.json();
+        document.getElementById('total-count').textContent = `共 ${data.total} 条记录`;
+
+        const badgeMap = {
+            '[!!!] 最高优先': 'badge-highest', '[!!]  高度优先': 'badge-high',
+            '[*]   一般关注': 'badge-normal', '[ ]   定期巡检即可': 'badge-low',
+        };
+        const riskColor = { '高风险': 'stat-risk-high', '中风险': 'stat-risk-med', '低风险': 'stat-risk-low' };
+
+        const tbody = document.getElementById('history-tbody');
+        if (data.records.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted);">
+                暂无历史记录<br><br><a href="/">去评估</a>
+            </td></tr>`;
+        } else {
+            tbody.innerHTML = data.records.map(r => `
+                <tr>
+                    <td style="font-size:12px;color:var(--text-secondary);">${r.created_at}</td>
+                    <td><strong>${escapeHtml(r.facility_name)}</strong></td>
+                    <td>${r.facility_type}</td>
+                    <td><span class="${riskColor[r.risk_level] || ''}" style="font-weight:600;">${r.risk_level}</span></td>
+                    <td><span class="priority-badge ${badgeMap[r.priority_level] || 'badge-normal'}">${r.priority_level}</span></td>
+                    <td>
+                        <a href="/history/${r.id}" class="btn btn-sm btn-secondary">查看</a>
+                        <button class="btn btn-sm btn-danger" onclick="deleteRecord(${r.id})">删除</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // 分页
+        const totalPages = Math.ceil(data.total / data.per_page) || 1;
+        let pagHtml = '';
+        for (let i = 1; i <= totalPages; i++) {
+            pagHtml += `<button class="${i === page ? 'active' : ''}" onclick="loadHistory(${i})">${i}</button>`;
+        }
+        document.getElementById('pagination').innerHTML = pagHtml;
+
+    } catch (err) {
+        document.getElementById('history-tbody').innerHTML =
+            `<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--danger);">加载失败: ${err.message}</td></tr>`;
+    }
+}
+
+async function deleteRecord(id) {
+    if (!confirm('确定删除这条记录吗？')) return;
+    try {
+        const resp = await fetch(`/api/history/${id}`, { method: 'DELETE' });
+        const data = await resp.json();
+        if (data.success) {
+            showToast('删除成功');
+            loadHistory(currentPage);
+        } else {
+            showToast('删除失败', 'error');
+        }
+    } catch (err) {
+        showToast('网络错误', 'error');
+    }
+}
+
+async function confirmClear() {
+    if (!confirm('确定要清空全部历史记录吗？此操作不可恢复！')) return;
+    try {
+        const resp = await fetch('/api/history/clear', { method: 'DELETE' });
+        const data = await resp.json();
+        if (data.success) {
+            showToast('已清空全部历史');
+            loadHistory(1);
+        } else {
+            showToast('清空失败，需要管理员权限', 'error');
+        }
+    } catch (err) {
+        showToast('网络错误', 'error');
+    }
+}
+
+function escapeHtml(text) {
+    const d = document.createElement('div');
+    d.textContent = text;
+    return d.innerHTML;
+}
+
+// 初始加载
+loadHistory(1);
+</script>
+{% endblock %}

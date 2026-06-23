@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}老旧小区适老化设施维护优先级评估系统{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <span class="icon">🏘️</span>
+            <span>适老化设施评估系统</span>
+        </div>
+        <div class="navbar-links">
+            <a href="{{ url_for('index') }}" class="{% if request.path == '/' %}active{% endif %}">首页</a>
+            <a href="{{ url_for('diagnose_page') }}" class="{% if request.path == '/diagnose' %}active{% endif %}">单设施诊断</a>
+            <a href="{{ url_for('cpt_page') }}" class="{% if request.path == '/cpt' %}active{% endif %}">贝叶斯逻辑</a>
+            <a href="{{ url_for('ipa_page') }}" class="{% if request.path == '/ipa' %}active{% endif %}">IPA分析</a>
+            <a href="{{ url_for('history_page') }}" class="{% if request.path == '/history' %}active{% endif %}">历史记录</a>
+            <a href="{{ url_for('tools_page') }}" class="{% if request.path == '/tools' %}active{% endif %}">工具</a>
+            <a href="{{ url_for('calibrate_page') }}" class="{% if request.path == '/calibrate' %}active{% endif %}">模型校准</a>
+            <a href="{{ url_for('admin_page') }}" class="{% if request.path.startswith('/admin') %}active{% endif %}">设置</a>
+        </div>
+    </nav>
+
+    <!-- 主内容 -->
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- Toast 容器 -->
+    <div id="toast-container"></div>
+
+    <!-- 公共 JS -->
+    <script>
+    function showToast(message, type = 'success') {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.textContent = message;
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    }
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

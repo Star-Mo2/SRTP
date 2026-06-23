@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}评估详情 - 适老化设施维护优先级评估系统{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:16px;">
+    <a href="{{ url_for('history_page') }}" class="btn btn-sm btn-secondary">← 返回历史列表</a>
+</div>
+
+<div class="card">
+    <div class="card-header"><span class="card-icon">📋</span> 评估详情 — {{ record.facility_name or '未命名' }}</div>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">评估时间：{{ record.created_at }}</p>
+
+    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+        <tr><td style="padding:8px 12px;background:var(--bg-secondary);width:160px;font-weight:600;">设施类型</td><td style="padding:8px 12px;">{{ record.facility_type }}</td></tr>
+        <tr><td style="padding:8px 12px;font-weight:600;">使用群体</td><td style="padding:8px 12px;">{{ record.user_groups|join(', ') }}</td></tr>
+        <tr><td style="padding:8px 12px;background:var(--bg-secondary);font-weight:600;">退化暴露</td><td style="padding:8px 12px;">{{ record.exposure }}</td></tr>
+        <tr><td style="padding:8px 12px;font-weight:600;">使用负荷</td><td style="padding:8px 12px;">{{ record.usage }}</td></tr>
+        <tr><td style="padding:8px 12px;background:var(--bg-secondary);font-weight:600;">治理状态</td><td style="padding:8px 12px;">{{ record.maintenance }}</td></tr>
+        <tr><td style="padding:8px 12px;font-weight:600;">正义修正</td><td style="padding:8px 12px;">{{ record.social_impact }}</td></tr>
+        <tr><td style="padding:8px 12px;background:var(--bg-secondary);font-weight:600;">故障风险等级</td><td style="padding:8px 12px;font-weight:600;">{{ record.risk_level }}</td></tr>
+        <tr><td style="padding:8px 12px;font-weight:600;">风险概率</td><td style="padding:8px 12px;">低 {{ "%.1f"|format(record.prob_low*100) }}% / 中 {{ "%.1f"|format(record.prob_med*100) }}% / 高 {{ "%.1f"|format(record.prob_high*100) }}%</td></tr>
+        <tr><td style="padding:8px 12px;background:var(--bg-secondary);font-weight:600;">社会权重</td><td style="padding:8px 12px;">{{ record.social_weight }}（{{ record.weight_tier }}）</td></tr>
+        <tr><td style="padding:8px 12px;font-weight:600;">优先级</td><td style="padding:8px 12px;">{{ record.priority_score }} — {{ record.priority_level }}</td></tr>
+    </table>
+</div>
+
+{% if record.llm_interpretation %}
+<div class="card">
+    <div class="card-header"><span class="card-icon">🤖</span> AI 解读与建议</div>
+    <div class="interpretation-box">{{ record.llm_interpretation }}</div>
+</div>
+{% endif %}
+{% endblock %}

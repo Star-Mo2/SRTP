@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}IPA 筛选分析 - 适老化设施维护优先级评估系统{% endblock %}
+
+{% block content %}
+<h2 style="margin-bottom:20px;">📊 IPA 重要性-满意度分析</h2>
+<p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">
+    为设施的重要性和满意度打分（1-5 分），系统自动分入四象限，识别需重点改进的设施。
+</p>
+<div class="card" style="margin-bottom:16px;background:var(--accent-light);border:1px solid var(--accent);">
+    <div style="font-size:13px;line-height:1.8;">
+        <strong>📖 评分说明：</strong><br>
+        <strong>重要性</strong>：该设施对<b>主要使用群体</b>日常生活的必需程度。例如长椅对老人是 5 分（刚需）、对租户可能是 2 分。<br>
+        <strong>满意度</strong>：<b>这些使用者</b>对设施<b>当前状况</b>的满意程度。例如"长椅很重要，但现在破烂不堪，只给 1 分"。<br>
+        <span style="color:var(--text-secondary);">两项均在 1-5 分内评分。针对不同群体应分开打分（如 A 版问卷给长者、B 版给家长）。</span>
+    </div>
+</div>
+
+<div class="two-col">
+    <!-- 左侧：打分表 -->
+    <div class="card">
+        <div class="card-header"><span class="card-icon">📝</span> 设施打分</div>
+        <div id="ipa-form-container">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+                <input type="file" id="ipa-import-file" accept=".csv,.xlsx" style="display:none;" onchange="handleIPAImport(event)">
+                <button type="button" class="btn btn-sm btn-secondary" onclick="document.getElementById('ipa-import-file').click()">📂 导入 CSV/Excel</button>
+                <span style="font-size:11px;color:var(--text-muted);">支持 .csv 或 .xlsx</span>
+            </div>
+            <div id="ipa-import-preview" style="margin-bottom:8px;"></div>
+            <div id="ipa-rows"></div>
+            <button class="btn btn-sm btn-secondary" onclick="addIPARow()" style="margin-top:8px;">+ 添加设施</button>
+            <button class="btn btn-primary" onclick="runIPA()" style="margin-top:8px;margin-left:8px;">📊 分析</button>
+        </div>
+    </div>
+    <!-- 右侧：结果 -->
+    <div>
+        <div class="card">
+            <div class="card-header"><span class="card-icon">🎯</span> 四象限结果</div>
+            <div class="chart-container"><canvas id="ipaChart"></canvas></div>
+            <div id="ipa-summary" style="font-size:13px;color:var(--text-secondary);text-align:center;"></div>
+        </div>
+        <div id="ipa-quadrants"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+<script>
+let ipaChart = null;
+const FACILITY_TYPES = {{ facility_types | tojson | safe }};
+
+function createRow(type='', importance=3, performance=3) {
+    const types = FACILITY_TYPES.map(t=>`<option value="${t}" ${t===type?'selected':''}>${t}</option>`).join('');
+    return `<div class="ipa-row" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+        <select class="form-select" style="width:auto;min-width:120px;"><option value="">设施类型</option>${types}</select>
+        <span style="font-size:11px;white-space:nowrap;">重要性<br>(1-5分)</span>
+        <input type="number" class="form-input" style="width:60px;" min="1" max="5" value="${importance}" title="该设施对主要使用群体的必需程度">
+        <span style="font-size:11px;white-space:nowrap;">满意度<br>(1-5分)</span>
+        <input type="number" class="form-input" style="width:60px;" min="1" max="5" value="${performance}" title="使用者对设施当前状况的满意程度">
+        <button class="btn btn-sm btn-danger" onclick="this.closest('.ipa-row').remove()">✕</button>
+    </div>`;
+}
+
+function addIPARow(){ document.getElementById('ipa-rows').insertAdjacentHTML('beforeend', createRow()); }
+
+async function runIPA(){
+    const rows = document.querySelectorAll('.ipa-row');
+    const facilities = [];
+    rows.forEach(row=>{
+        const sel=row.querySelector('select'), inps=row.querySelectorAll('input');
+        if(sel.value) facilities.push({type:sel.value, importance:parseInt(inps[0].value), performance:parseInt(inps[1].value)});
+    });
+    if(!facilities.length){ showToast('请至少添加一个设施','error'); return; }
+
+    const r=await fetch('/api/ipa/analyze',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({facilities})});
+    const d=await r.json();
+    if(!d.success) return showToast(d.error||'分析失败','error');
+
+    document.getElementById('ipa-summary').innerHTML = `
+        均值线: 重要性=${d.imp_mean} | 满意度=${d.perf_mean} | 共${d.total}个设施 |
+        <b style="color:var(--danger);">需重点改进: ${d.focus.length}个</b>`;
+
+    // 四象限图
+    const ctx=document.getElementById('ipaChart').getContext('2d');
+    if(ipaChart) ipaChart.destroy();
+    const colors={I:'#8BAA7D',II:'#C4655A',III:'#B8A898',IV:'#D4A853'};
+    const labels={I:'I-继续保持',II:'II-重点改进',III:'III-低优先级',IV:'IV-可能过度'};
+    ipaChart=new Chart(ctx,{type:'scatter',data:{datasets:['I','II','III','IV'].map(q=>({
+        label:labels[q], data:d.quadrants[q].map(f=>({x:f.performance,y:f.importance})),
+        backgroundColor:colors[q], borderColor:colors[q], pointRadius:6, pointHoverRadius:9,
+    }))},options:{responsive:true,
+        scales:{x:{title:{text:'满意度(表现)→',display:true},min:0,max:6},
+                y:{title:{text:'重要性↑',display:true},min:0,max:6}},
+        plugins:{annotation:{annotations:{vline:{type:'line',xMin:d.perf_mean,xMax:d.perf_mean,
+            borderColor:'#999',borderWidth:1,borderDash:[5,5]},
+            hline:{type:'line',yMin:d.imp_mean,yMax:d.imp_mean,borderColor:'#999',borderWidth:1,borderDash:[5,5]}}}}}});
+
+    // 重点改进列表
+    let html='';
+    for(const [q,fs] of Object.entries(d.quadrants)){
+        if(!fs.length) continue;
+        html+=`<div class="card" style="margin-top:12px;">
+            <h4><span class="priority-badge badge-${q==='II'?'highest':q==='I'?'normal':q==='III'?'low':'high'}">${labels[q]}</span> ${fs.length}个设施</h4>`;
+        fs.forEach(f=>{html+=`<span style="display:inline-block;margin:4px 8px;font-size:13px;">${f.type} (重${f.importance}/满${f.performance})</span>`;});
+        html+='</div>';
+    }
+    // 第 II 象限（重点改进）→ 跳转维护优先级排序
+    if (d.focus && d.focus.length > 0) {
+        const focusTypes = [...new Set(d.focus.map(f => f.type))].join(',');
+        html += `<div style="text-align:center;margin-top:16px;">
+            <a href="/?from=ipa&types=${encodeURIComponent(focusTypes)}" class="btn btn-primary">
+                🔍 对这些设施进行维护优先级排序
+            </a>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">
+                将第 II 象限的 ${d.focus.length} 个重点设施带入首页批量评估
+            </div>
+        </div>`;
+    }
+    document.getElementById('ipa-quadrants').innerHTML=html;
+}
+
+// 初始行
+document.getElementById('ipa-rows').innerHTML = createRow('长椅',4,2)+createRow('儿童滑梯',5,2)+createRow('健身器材',4,3)+createRow('晾衣架',2,2)+createRow('凉亭',3,4);
+
+// ===== IPA 文件导入 =====
+async function handleIPAImport(event){
+    const file=event.target.files[0];
+    if(!file) return;
+    const ext=file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+    if(!['.csv','.xlsx'].includes(ext)){showToast('仅支持 .csv 或 .xlsx','error');event.target.value='';return;}
+
+    const preview=document.getElementById('ipa-import-preview');
+    preview.innerHTML='<span style="font-size:12px;color:var(--text-secondary);">⏳ 解析中...</span>';
+
+    const fd=new FormData(); fd.append('file',file);
+    try{
+        const resp=await fetch('/api/import/parse',{method:'POST',body:fd});
+        const data=await resp.json();
+        if(!data.success){preview.innerHTML=`<span style="color:var(--danger);font-size:12px;">${data.error}</span>`;event.target.value='';return;}
+
+        // 填充 IPA 行：用 type/重要性/满意度 字段
+        let html=''; let filled=0;
+        data.rows.forEach(r=>{
+            const type=r.facility_type||r.type||''; if(!type) return;
+            const imp=parseInt(r.importance)||3; const perf=parseInt(r.performance)||3;
+            html+=createRow(type,Math.min(5,Math.max(1,imp)),Math.min(5,Math.max(1,perf)));
+            filled++;
+        });
+        if(!filled){preview.innerHTML='<span style="color:var(--danger);font-size:12px;">未识别到设施类型/重要性/满意度列</span>';event.target.value='';return;}
+        document.getElementById('ipa-rows').innerHTML=html;
+        preview.innerHTML=`<span style="color:var(--success);font-size:12px;">✅ 已填充 ${filled} 个设施，请核对后点击分析。</span>`;
+    }catch(err){preview.innerHTML=`<span style="color:var(--danger);font-size:12px;">网络错误</span>`;}
+    event.target.value='';
+}
+</script>
+{% endblock %}

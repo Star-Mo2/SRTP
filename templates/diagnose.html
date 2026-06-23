@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}单设施诊断 - 适老化设施维护优先级评估系统{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:12px;">
+    <a href="{{ url_for('index') }}" class="btn btn-sm btn-secondary">← 返回优先级排序</a>
+</div>
+<h2 style="margin-bottom:16px;">🔬 单设施详细诊断</h2>
+<p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">
+    填写设施的 11 个观测变量，三层贝叶斯网络推理输出故障风险等级、归因分析和维护建议。
+</p>
+<div class="two-col">
+    <!-- ===== 左侧：表单 ===== -->
+    <div>
+        <div class="card">
+            <div class="card-header"><span class="card-icon">📋</span> 设施信息录入</div>
+            <form id="evaluate-form">
+                <div class="form-group">
+                    <label class="form-label">设施名称</label>
+                    <input type="text" class="form-input" id="facility_name" placeholder="例如：中心广场长椅">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">设施类型</label>
+                    <select class="form-select" id="facility_type" onchange="onTypeChange()">
+                        <option value="">-- 请选择 --</option>
+                        {% for ft in facility_types %}
+                        <option value="{{ ft }}">{{ ft }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- 分组1: 设施退化暴露 -->
+                <details class="field-group" open>
+                    <summary class="field-group-title">🏚️ 设施退化暴露（4项观测）</summary>
+                    <div class="form-group"><label class="form-label">材料类型</label>
+                        <select class="form-select" id="material">
+                            <option value="木质">木质 — 易受潮腐朽</option>
+                            <option value="金属" selected>金属 — 耐用但可能生锈</option>
+                            <option value="塑料">塑料 — UV老化为主</option>
+                        </select></div>
+                    <div class="form-group"><label class="form-label">安装年龄</label>
+                        <select class="form-select" id="install_age">
+                            <option value="<3年" selected>&lt;3年 — 较新</option>
+                            <option value="3-8年">3-8年 — 中年期</option>
+                            <option value=">8年">&gt;8年 — 老旧</option>
+                        </select></div>
+                    <div class="form-group"><label class="form-label">积水风险</label>
+                        <select class="form-select" id="water_log">
+                            <option value="低">低 — 排水良好</option>
+                            <option value="中" selected>中 — 偶有积水</option>
+                            <option value="高">高 — 长期积水浸泡</option>
+                        </select></div>
+                    <div class="form-group"><label class="form-label">遮阴情况</label>
+                        <select class="form-select" id="sun_shade">
+                            <option value="暴晒">暴晒 — 全天无遮挡</option>
+                            <option value="有遮" selected>有遮 — 树荫或建筑遮挡</option>
+                        </select></div>
+                </details>
+
+                <!-- 分组2: 使用负荷 -->
+                <details class="field-group" open>
+                    <summary class="field-group-title">👥 使用负荷（3项观测）</summary>
+                    <div class="form-group"><label class="form-label">使用频率</label>
+                        <select class="form-select" id="use_freq">
+                            <option value="低">低 — 偶尔有人用</option>
+                            <option value="中" selected>中 — 日常使用</option>
+                            <option value="高">高 — 全天候高频使用</option>
+                        </select></div>
+                    <div class="form-group"><label class="form-label">主要使用群体</label>
+                        <select class="form-select" id="user_group">
+                            <option value="成人">成人 — 使用较温和</option>
+                            <option value="老人" selected>老人 — 依赖度高</option>
+                            <option value="儿童">儿童 — 使用较剧烈</option>
+                        </select></div>
+                    <div class="form-group"><label class="form-label">使用强度</label>
+                        <select class="form-select" id="use_intensity">
+                            <option value="静坐" selected>静坐 — 轻量使用</option>
+                            <option value="健身">健身 — 中等强度</option>
+                            <option value="攀爬">攀爬 — 高强度冲击</option>
+                        </select></div>
+                </details>
+
+                <!-- 分组3: 治理滞后 -->
+                <details class="field-group" open>
+                    <summary class="field-group-title">🔧 治理滞后（2项观测）</summary>
+                    <div class="form-group"><label class="form-label">巡检频率</label>
+                        <select class="form-select" id="inspect_freq">
+                            <option value="每周">每周 — 高频巡检</option>
+                            <option value="每月" selected>每月 — 标准巡检</option>
+                            <option value="每季">每季 — 低频巡检</option>
+                        </select></div>
+                    <div class="form-group"><label class="form-label">维修响应时间</label>
+                        <select class="form-select" id="repair_time">
+                            <option value="<3天">&lt;3天 — 快速响应</option>
+                            <option value="3-14天" selected>3-14天 — 正常响应</option>
+                            <option value=">14天">&gt;14天 — 响应迟缓</option>
+                        </select></div>
+                </details>
+
+                <!-- 分组4: 正义修正因子 -->
+                <details class="field-group" open>
+                    <summary class="field-group-title">❤️ 正义修正因子（2项观测）</summary>
+                    <div class="form-group"><label class="form-label">群体依赖程度</label>
+                        <select class="form-select" id="dependency">
+                            <option value="低">低 — 非必需设施</option>
+                            <option value="中" selected>中 — 有一定依赖</option>
+                            <option value="高">高 — 弱势群体高度依赖</option>
+                        </select></div>
+                    <div class="form-group"><label class="form-label">停用后影响等级</label>
+                        <select class="form-select" id="outage_impact">
+                            <option value="轻微">轻微 — 停用对居民影响很小</option>
+                            <option value="中等" selected>中等 — 停用带来一定不便</option>
+                            <option value="严重">严重 — 停用直接影响安全或日常刚需</option>
+                        </select></div>
+                </details>
+
+                <div class="form-group">
+                    <label class="form-label">主要使用群体（可多选，用于社会权重计算）</label>
+                    <div class="checkbox-group" id="user-groups">
+                        <div class="checkbox-item checked" data-value="老人">老人</div>
+                        <div class="checkbox-item checked" data-value="成年人">成年人</div>
+                        <div class="checkbox-item" data-value="儿童">儿童</div>
+                        <div class="checkbox-item" data-value="行动不便者">行动不便者</div>
+                        <div class="checkbox-item" data-value="租户">租户</div>
+                    </div>
+                </div>
+
+                <div style="display:flex;gap:12px;margin-top:8px;align-items:center;flex-wrap:wrap;">
+                    <input type="file" id="import-file" accept=".csv,.xlsx" style="display:none;" onchange="handleFileImport(event)">
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="document.getElementById('import-file').click()">📂 导入 CSV/Excel</button>
+                    <span style="font-size:11px;color:var(--text-muted);">支持 .csv 或 .xlsx，自动匹配列名填充</span>
+                </div>
+                <div id="import-preview" style="margin-top:8px;"></div>
+
+                <div style="display:flex;gap:12px;margin-top:12px;">
+                    <button type="submit" class="btn btn-primary btn-lg" id="submit-btn">🔍 开始评估</button>
+                    <button type="button" class="btn btn-secondary btn-lg" onclick="resetForm()">🧹 重置</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ===== 右侧：结果 ===== -->
+    <div>
+        <div id="result-section" style="display:none;">
+            <div class="card">
+                <div class="card-header"><span class="card-icon">📊</span> 评估结果</div>
+                <div class="result-grid" id="result-stats"></div>
+                <div class="chart-container"><canvas id="riskChart"></canvas></div>
+                <!-- 中间因子展开 -->
+                <div id="mid-probs" style="margin:12px 0;"></div>
+                <div id="result-priority" style="text-align:center;margin:12px 0;"></div>
+                <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+                    <button class="btn btn-primary" onclick="requestInterpretation()" id="interpret-btn">🤖 AI 解读</button>
+                    <button class="btn btn-secondary btn-sm" onclick="showWhatIf()">🔄 What-if</button>
+                    <button class="btn btn-secondary btn-sm" onclick="showScenario()">📋 情景对比</button>
+                </div>
+            </div>
+            <div id="whatif-panel" class="what-if-panel" style="display:none;"></div>
+            <div id="scenario-panel" style="display:none;"></div>
+            <div id="interpretation-section" style="display:none;">
+                <div class="card">
+                    <div class="card-header"><span class="card-icon">🤖</span> AI 解读与维护建议</div>
+                    <div id="interpretation-content"></div>
+                </div>
+            </div>
+        </div>
+        <div id="empty-state" class="card empty-state">
+            <div class="empty-icon">🏗️</div>
+            <div>请在左侧填写设施信息并点击"开始评估"</div>
+            <div style="margin-top:8px;font-size:13px;">系统使用三层贝叶斯网络（11个观测变量→4个中间因子→故障风险）进行分析</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/main.js') }}"></script>{% endblock %}

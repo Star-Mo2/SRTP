@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block title %}贝叶斯逻辑链 - 适老化设施维护优先级评估系统{% endblock %}
+
+{% block content %}
+<h2 style="margin-bottom:20px;">🔬 贝叶斯网络逻辑链</h2>
+
+<!-- ===== SVG 因果图 ===== -->
+<div class="card">
+    <div class="card-header"><span class="card-icon">🔗</span> 因果关系图</div>
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">
+        <strong>悬停</strong>节点查看状态取值，<strong>点击</strong>箭头查看该路径的典型概率示例。
+    </p>
+    <div class="svg-container">
+        <svg viewBox="0 0 1280 530" id="network-svg" style="width:100%;max-width:1280px;height:530px;"></svg>
+    </div>
+</div>
+
+<!-- ===== 因子影响 + 规则详情 ===== -->
+<div class="card" style="margin-top:20px;">
+    <div class="card-header"><span class="card-icon">📈</span> 各因子边际影响</div>
+    <div class="influence-cards" id="influence-cards"></div>
+</div>
+
+<!-- ===== 代表性规则 ===== -->
+<div class="card" style="margin-top:20px;" id="sample-rules-card">
+    <div class="card-header"><span class="card-icon">📋</span> 代表性规则示例（按风险等级分组）</div>
+    <div id="sample-rules"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const graphData = {{ graph | tojson | safe }};
+
+// ===== 绘制 SVG 逻辑链（四层布局） =====
+(function drawSVG() {
+    const svg = document.getElementById('network-svg');
+    svg.setAttribute('viewBox', '0 0 1280 530');
+    svg.style.height = '530px';
+    const ns = 'http://www.w3.org/2000/svg';
+
+    // 节点位置：四层布局
+    const pos = {
+        // 第1层：11个叶子（4列）
+        material:      {x:20,  y:60},  install_age:   {x:20,  y:140},
+        water_log:     {x:20,  y:230}, sun_shade:     {x:20,  y:320},
+        use_freq:      {x:210, y:80},  user_group:    {x:210, y:190},
+        use_intensity: {x:210, y:300},
+        inspect_freq:  {x:400, y:110}, repair_time:   {x:400, y:230},
+        dependency:    {x:590, y:110}, outage_impact: {x:590, y:230},
+        // 第2层：4个中间因子
+        exposure:      {x:800, y:80},  usage:         {x:800, y:190},
+        maintenance:   {x:800, y:300}, social_impact: {x:800, y:400},
+        // 第3层：目标
+        failure_risk:  {x:990, y:230},
+        // 第4层
+        priority:      {x:1160, y:230},
+    };
+    // 节点宽度
+    const nodeW = {layer1:80, layer2:110, layer3:110, layer4:110};
+
+    // 颜色按组
+    const groupColor = {exposure:'#F2D0D0', usage:'#D0D8F2', maintenance:'#D8F0D0',
+                        social:'#E8D0F0', target:'#F0E8C0'};
+    function color(n) { return groupColor[n.group] || '#eee'; }
+
+    function w(node) { return (nodeW['layer'+node.layer] || 90); }
+
+    // 箭头标记
+    const defs = document.createElementNS(ns, 'defs');
+    defs.innerHTML = '<marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#C17D53"/></marker>';
+    svg.appendChild(defs);
+
+    // 画边
+    graphData.edges.forEach(edge => {
+        const f = pos[edge.from], t = pos[edge.to];
+        if (!f || !t) return;
+        const fn = graphData.nodes.find(n=>n.id===edge.from);
+        const fw = w(fn);
+        const g = document.createElementNS(ns, 'g');
+        g.setAttribute('class', 'edge-group');
+        g.style.cursor = 'pointer';
+        const l = document.createElementNS(ns, 'line');
+        l.setAttribute('x1', f.x+fw); l.setAttribute('y1', f.y);
+        l.setAttribute('x2', t.x); l.setAttribute('y2', t.y);
+        l.setAttribute('stroke', '#C17D53'); l.setAttribute('stroke-width', '1.5');
+        l.setAttribute('marker-end', 'url(#arrowhead)');
+        g.appendChild(l);
+        g.addEventListener('click', () => showEdgeDetail(edge));
+        svg.appendChild(g);
+    });
+
+    // 画节点
+    graphData.nodes.forEach(node => {
+        const p = pos[node.id];
+        if (!p) return;
+        const pw = w(node);
+        const g = document.createElementNS(ns, 'g');
+        g.setAttribute('class', 'node-group');
+        g.style.cursor = 'pointer';
+
+        const statesText = (node.states||[]).slice(0,3).join('/');
+        const rect = document.createElementNS(ns, 'rect');
+        rect.setAttribute('x', p.x); rect.setAttribute('y', p.y-18);
+        rect.setAttribute('width', pw); rect.setAttribute('height', 36);
+        rect.setAttribute('rx', '8'); rect.setAttribute('fill', color(node));
+        rect.setAttribute('stroke', '#8B7355'); rect.setAttribute('stroke-width', '1.2');
+        g.appendChild(rect);
+
+        const label = document.createElementNS(ns, 'text');
+        label.setAttribute('x', p.x+pw/2); label.setAttribute('y', p.y);
+        label.setAttribute('text-anchor', 'middle');
+        label.setAttribute('font-size', node.layer>=3 ? '13' : '11');
+        label.setAttribute('font-weight', '600'); label.setAttribute('fill', '#4A3728');
+        label.textContent = node.label;
+        g.appendChild(label);
+
+        if (node.layer <= 2) {
+            const st = document.createElementNS(ns, 'text');
+            st.setAttribute('x', p.x+pw/2); st.setAttribute('y', p.y+13);
+            st.setAttribute('text-anchor', 'middle');
+            st.setAttribute('font-size', '9'); st.setAttribute('fill', '#8B7355');
+            st.textContent = statesText;
+            g.appendChild(st);
+        }
+
+        g.addEventListener('mouseenter', () => showTooltip(node, p, pw));
+        g.addEventListener('mouseleave', hideTooltip);
+        svg.appendChild(g);
+    });
+
+    // Tooltip
+    const tooltip = document.createElementNS(ns, 'g');
+    tooltip.setAttribute('id', 'svg-tooltip');
+    tooltip.style.display = 'none';
+    svg.appendChild(tooltip);
+})();
+
+function showTooltip(node, p, pw) {
+    const tt = document.getElementById('svg-tooltip');
+    tt.style.display = '';
+    const desc = node.desc || node.label;
+    const statesText = (node.states||[]).join(', ');
+    tt.innerHTML = `<rect x="${p.x+pw+8}" y="${p.y-28}" width="230" height="50" rx="6" fill="#FFF8F0" stroke="#D4956B" stroke-width="1"/>
+        <text x="${p.x+pw+16}" y="${p.y-10}" font-size="11" font-weight="600" fill="#4A3728">${node.label}</text>
+        <text x="${p.x+pw+16}" y="${p.y+8}" font-size="10" fill="#8B7355">${statesText}</text>`;
+}
+function hideTooltip(){ document.getElementById('svg-tooltip').style.display='none'; }
+
+function showEdgeDetail(edge) {
+    const from = graphData.nodes.find(n=>n.id===edge.from);
+    const to = graphData.nodes.find(n=>n.id===edge.to);
+    // 收集所有风险等级的规则示例
+    const allSamples = [];
+    const rules = graphData.sample_rules || {};
+    for (const [cat, catRules] of Object.entries(rules)) {
+        (catRules || []).forEach(r => {
+            allSamples.push({...r, category: cat});
+        });
+    }
+    let html = `<div class="card" style="margin-top:16px;"><div class="card-header">🔍 ${from.label} → ${to.label}</div>`;
+    html += `<p style="font-size:13px;color:var(--text-secondary);">因果关系已高亮。以下是不同输入组合下的典型概率示例：</p>`;
+    if (allSamples.length) {
+        const badgeMap = {'高风险倾向':'badge-highest','中风险倾向':'badge-high','低风险倾向':'badge-low'};
+        html += '<div style="font-size:12px;margin-top:8px;">';
+        allSamples.forEach(s => {
+            const text = s.desc || s.description || '';
+            const badge = badgeMap[s.category] || 'badge-normal';
+            html += `<div class="rule-example" style="display:flex;align-items:flex-start;gap:8px;">
+                <span class="priority-badge ${badge}" style="font-size:10px;white-space:nowrap;">${s.category}</span>
+                <span style="color:var(--text-secondary);">${text}</span></div>`;
+        });
+        html += '</div>';
+    }
+    html += '</div>';
+    document.getElementById('sample-rules').innerHTML = html;
+    document.getElementById('sample-rules-card').scrollIntoView({behavior:'smooth'});
+}
+
+// ===== 因子影响卡片 =====
+(function renderInfluences(){
+    const container = document.getElementById('influence-cards');
+    const infs = graphData.influences;
+    const colors = {exposure:'#E8B4B8', usage:'#B8C9E8', maintenance:'#C8D8B0', social_impact:'#E0C8E8'};
+    let html = '';
+    for(const [key, inf] of Object.entries(infs)){
+        const wp = inf.weight_pct != null ? (inf.weight_pct*100).toFixed(0) : 25;
+        html += `<div class="influence-card">
+            <h4>${inf.name}</h4>
+            <div class="diff" style="color:var(--accent);">${wp}%</div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">权重 ${inf.weight_raw||'1.0'}，对最终风险贡献占比</div>
+            <div style="font-size:12px;color:var(--text-secondary);">${inf.description}</div>
+            <div class="diff-bar"><div class="diff-bar-fill" style="width:${wp*3}%"></div></div>
+        </div>`;
+    }
+    container.innerHTML = html;
+})();
+
+// ===== 代表性规则示例 =====
+(function renderSamples(){
+    const container = document.getElementById('sample-rules');
+    const samples = graphData.sample_rules;
+    const badgeMap = {'高风险倾向':'badge-highest','中风险倾向':'badge-high','低风险倾向':'badge-low'};
+    let html = '';
+    for(const [cat, rules] of Object.entries(samples)){
+        html += `<h4 style="margin-top:16px;"><span class="priority-badge ${badgeMap[cat]||'badge-normal'}">${cat}</span></h4>`;
+        rules.forEach(r => {
+            const text = r.desc || r.description || '';
+            html += `<div class="rule-example" style="font-size:12px;padding:8px 0;border-bottom:1px solid var(--border-light);">
+                <span style="color:var(--text-secondary);">${text}</span>
+            </div>`;
+        });
+    }
+    container.innerHTML = html;
+})();
+</script>
+{% endblock %}

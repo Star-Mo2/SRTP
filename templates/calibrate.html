@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+{% block title %}模型校准 - 老旧小区适老化设施维护优先级评估系统{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>📊 模型校准</h1>
+    <p class="subtitle">上传实地观测数据，让模型的先验分布更贴合目标小区的实际情况</p>
+</div>
+
+<!-- 步骤1：上传数据 -->
+<div class="card" id="step1-card">
+    <div class="card-header">
+        <span class="step-badge">1</span> 上传校准数据
+    </div>
+    <div class="card-body">
+        <p style="color:var(--text-secondary);margin-bottom:12px;">
+            上传包含 11 个观测字段的 CSV 或 Excel 文件。需要至少 5 条记录用于校准。
+        </p>
+        <div class="upload-area" id="upload-area">
+            <input type="file" id="calibrate-file" accept=".csv,.xlsx" hidden>
+            <div class="upload-hint">
+                <span style="font-size:36px;">📁</span>
+                <span>拖拽文件到此处，或 <a href="#" onclick="document.getElementById('calibrate-file').click();return false;">点击选择文件</a></span>
+                <span style="font-size:11px;color:var(--text-muted);">支持 .csv / .xlsx</span>
+            </div>
+        </div>
+        <div style="margin-top:8px;">
+            <a href="{{ url_for('tools_page') }}" class="btn btn-sm btn-outline">📥 下载数据采集模板</a>
+        </div>
+        <div id="upload-status" style="margin-top:8px;"></div>
+    </div>
+</div>
+
+<!-- 步骤2：数据预览 & 执行校准 -->
+<div class="card" id="step2-card" style="display:none;">
+    <div class="card-header">
+        <span class="step-badge">2</span> 数据预览与校准
+    </div>
+    <div class="card-body">
+        <div id="data-summary" style="margin-bottom:12px;"></div>
+        <div class="table-wrap" style="max-height:300px;overflow-y:auto;margin-bottom:16px;">
+            <table class="history-table" id="data-preview-table">
+                <thead></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <div class="btn-row">
+            <button class="btn btn-primary" id="btn-calibrate" onclick="runCalibration()">
+                🔄 开始校准
+            </button>
+            <button class="btn btn-outline" id="btn-reset" onclick="resetModel()">
+                ↩ 重置为默认参数
+            </button>
+        </div>
+        <div id="calibrate-status" style="margin-top:12px;"></div>
+    </div>
+</div>
+
+<!-- 步骤3：校准结果对比 -->
+<div class="card" id="step3-card" style="display:none;">
+    <div class="card-header">
+        <span class="step-badge">3</span> 校准结果：先验分布对比
+    </div>
+    <div class="card-body">
+        <div id="calibrate-message" style="margin-bottom:16px;"></div>
+        <div id="compare-charts" class="charts-grid"></div>
+    </div>
+</div>
+<p style="font-size:11px;color:var(--text-muted);text-align:center;margin-top:20px;">
+    💡 设施可按"类型"汇总评估（如"木质长椅"代表小区所有木质长椅），也可按"个体"逐项评估（同类型多个体可命名为"长椅①""长椅②"等）。校准时建议统一口径。
+</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let parsedRecords = [];
+let priorsBefore = null;
+let priorsAfter = null;
+let labelsMap = null;
+
+// ===== 文件上传 =====
+const uploadArea = document.getElementById('upload-area');
+const fileInput = document.getElementById('calibrate-file');
+
+uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+uploadArea.addEventListener('dragleave', () => { uploadArea.classList.remove('dragover'); });
+uploadArea.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file) processFile(file);
+});
+fileInput.addEventListener('change', () => {
+    const file = fileInput.files[0];
+    if (file) processFile(file);
+});
+
+async function processFile(file) {
+    const status = document.getElementById('upload-status');
+    status.innerHTML = '<span class="loading"></span> 正在解析文件...';
+
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+        const r = await fetch('/api/import/parse', { method: 'POST', body: formData });
+        const d = await r.json();
+        if (!d.success) {
+            status.innerHTML = `<span class="text-danger">❌ ${d.error}</span>`;
+            return;
+        }
+        parsedRecords = d.rows;
+        status.innerHTML = `<span class="text-success">✅ ${d.message}</span>`;
+
+        // 显示步骤2
+        document.getElementById('step2-card').style.display = '';
+        document.getElementById('step3-card').style.display = 'none';
+        showDataPreview();
+    } catch (e) {
+        status.innerHTML = `<span class="text-danger">❌ 解析失败: ${e.message}</span>`;
+    }
+}
+
+// ===== 数据预览 =====
+function showDataPreview() {
+    document.getElementById('data-summary').innerHTML =
+        `<b>已加载 ${parsedRecords.length} 条记录</b>，共 ${Object.keys(parsedRecords[0]||{}).length} 个字段`;
+
+    const thead = document.querySelector('#data-preview-table thead');
+    const tbody = document.querySelector('#data-preview-table tbody');
+    if (parsedRecords.length === 0) return;
+
+    const cols = Object.keys(parsedRecords[0]);
+    thead.innerHTML = '<tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr>';
+    tbody.innerHTML = parsedRecords.slice(0, 50).map(r =>
+        '<tr>' + cols.map(c => `<td>${escapeHtml(String(r[c]||''))}</td>`).join('') + '</tr>'
+    ).join('');
+    if (parsedRecords.length > 50) {
+        tbody.innerHTML += `<tr><td colspan="${cols.length}" style="text-align:center;color:var(--text-muted);">
+            仅显示前 50 条，共 ${parsedRecords.length} 条</td></tr>`;
+    }
+}
+
+// ===== 执行校准 =====
+async function runCalibration() {
+    if (parsedRecords.length < 5) {
+        showToast('至少需要 5 条记录才能校准', 'error');
+        return;
+    }
+    const btn = document.getElementById('btn-calibrate');
+    const status = document.getElementById('calibrate-status');
+    btn.disabled = true;
+    btn.textContent = '⏳ 校准中...';
+    status.innerHTML = '<span class="loading"></span> 正在进行贝叶斯先验校准...';
+
+    try {
+        // 先获取校准前先验
+        const beforeR = await fetch('/api/engine/priors');
+        const beforeD = await beforeR.json();
+        priorsBefore = beforeD.priors;
+        labelsMap = beforeD.labels;
+
+        // 执行校准
+        const r = await fetch('/api/calibrate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ records: parsedRecords })
+        });
+        const d = await r.json();
+        if (!d.success) {
+            status.innerHTML = `<span class="text-danger">❌ ${d.error}</span>`;
+            btn.disabled = false;
+            btn.textContent = '🔄 开始校准';
+            return;
+        }
+        priorsAfter = d.new_priors;
+        status.innerHTML = '';
+
+        // 显示步骤3
+        document.getElementById('step3-card').style.display = '';
+        document.getElementById('calibrate-message').innerHTML =
+            `<div class="alert alert-success">✅ ${d.message}</div>`;
+        renderComparison();
+    } catch (e) {
+        status.innerHTML = `<span class="text-danger">❌ 校准失败: ${e.message}</span>`;
+    }
+    btn.disabled = false;
+    btn.textContent = '🔄 开始校准';
+}
+
+// ===== 重置模型 =====
+async function resetModel() {
+    if (!confirm('确认重置模型为先验默认参数？校准后的分布将丢失。')) return;
+    try {
+        const r = await fetch('/api/engine/reset', { method: 'POST' });
+        const d = await r.json();
+        if (d.success) {
+            showToast('模型已重置');
+            document.getElementById('step3-card').style.display = 'none';
+            document.getElementById('calibrate-status').innerHTML = '';
+            priorsBefore = null;
+            priorsAfter = null;
+        }
+    } catch (e) {
+        showToast('重置失败: ' + e.message, 'error');
+    }
+}
+
+// ===== 渲染对比柱状图 =====
+function renderComparison() {
+    if (!priorsBefore || !priorsAfter || !labelsMap) return;
+
+    const container = document.getElementById('compare-charts');
+    const colors = ['#8BAA7D', '#C4655A', '#D4A853', '#6B8DBF', '#B08D7A'];
+    const beforeColor = 'rgba(180,160,150,0.7)';  // 灰棕色：校准前
+    const afterColor = 'rgba(139,170,125,0.8)';    // 绿色：校准后
+
+    let html = '';
+    let idx = 0;
+    for (const [varName, labelInfo] of Object.entries(labelsMap)) {
+        const states = labelInfo.states;
+        const label = labelInfo.label;
+        const before = priorsBefore[varName] || {};
+        const after = priorsAfter[varName] || {};
+
+        const canvasId = `chart-${varName}`;
+        html += `<div class="compare-card">
+            <h4>${label}</h4>
+            <div style="height:180px;"><canvas id="${canvasId}"></canvas></div>
+        </div>`;
+        idx++;
+    }
+
+    container.innerHTML = html;
+
+    // 逐张画 Chart.js 柱状图
+    for (const [varName, labelInfo] of Object.entries(labelsMap)) {
+        const states = labelInfo.states;
+        const before = priorsBefore[varName] || {};
+        const after = priorsAfter[varName] || {};
+        const canvasId = `chart-${varName}`;
+
+        const ctx = document.getElementById(canvasId);
+        if (!ctx) continue;
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: states,
+                datasets: [
+                    {
+                        label: '校准前',
+                        data: states.map(s => before[s] || 0),
+                        backgroundColor: beforeColor,
+                        borderColor: 'rgba(180,160,150,1)',
+                        borderWidth: 1,
+                    },
+                    {
+                        label: '校准后',
+                        data: states.map(s => after[s] || 0),
+                        backgroundColor: afterColor,
+                        borderColor: 'rgba(139,170,125,1)',
+                        borderWidth: 1,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
+                scales: {
+                    y: { beginAtZero: true, max: 1, ticks: { callback: v => (v*100)+'%', font: { size: 10 } } },
+                    x: { ticks: { font: { size: 10 } } },
+                },
+            },
+        });
+    }
+    container.scrollIntoView({ behavior: 'smooth' });
+}
+
+function escapeHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+</script>
+{% endblock %}

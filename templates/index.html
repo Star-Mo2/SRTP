@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}维护优先级排序 - 适老化设施维护优先级评估系统{% endblock %}
+
+{% block content %}
+<h2 style="margin-bottom:4px;">📊 设施维护优先级排序</h2>
+<p style="font-size:13px;color:var(--text-secondary);margin-bottom:20px;">
+    基于三层贝叶斯网络 + 社会影响权重，综合排序输出维护优先级清单。支持 CSV/Excel 导入或手动添加。
+</p>
+
+<!-- ===== 操作栏 ===== -->
+<div class="card" style="margin-bottom:16px;">
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+        <input type="file" id="ranking-import-file" accept=".csv,.xlsx" style="display:none;" onchange="handleRankingImport(event)">
+        <button type="button" class="btn btn-primary" onclick="document.getElementById('ranking-import-file').click()">📂 导入 CSV/Excel</button>
+        <span style="font-size:12px;color:var(--text-secondary);">
+            请按 11 个观测字段准备数据（设施名称、设施类型、材料、积水风险……），
+            模板可在 <a href="/tools" target="_blank">工具页</a> 下载"数据采集汇总表"
+        </span>
+        <button type="button" class="btn btn-secondary" onclick="addManualRow()">＋ 手动添加设施</button>
+        <span id="facility-count" style="font-size:13px;color:var(--text-muted);margin-left:auto;"></span>
+        <button type="button" class="btn btn-primary btn-lg" id="ranking-submit-btn" onclick="runRanking()" disabled>🔍 开始评估排序</button>
+    </div>
+    <div id="import-preview" style="margin-top:8px;font-size:12px;"></div>
+</div>
+
+<!-- ===== 待评估设施列表（可展开编辑） ===== -->
+<div class="card" style="margin-bottom:16px;padding:12px;" id="facility-list-card" hidden>
+    <div class="card-header" style="margin-bottom:8px;"><span class="card-icon">📋</span> 待评估设施列表</div>
+    <div id="facility-list" style="max-height:400px;overflow-y:auto;"></div>
+    <div style="display:flex;gap:8px;margin-top:8px;">
+        <button type="button" class="btn btn-sm btn-danger" onclick="clearAllFacilities()">清空全部</button>
+    </div>
+</div>
+
+<!-- ===== 筛选栏 ===== -->
+<div class="filter-bar" id="filter-bar" hidden>
+    <span style="font-size:13px;font-weight:600;">筛选：</span>
+    <select class="form-select" style="width:auto;" id="ranking-priority-filter" onchange="applyFilter()">
+        <option value="">全部优先级</option>
+        <option value="[!!!] 最高优先">最高优先</option>
+        <option value="[!!]  高度优先">高度优先</option>
+        <option value="[*]   一般关注">一般关注</option>
+        <option value="[ ]   定期巡检即可">定期巡检即可</option>
+    </select>
+    <button type="button" class="btn btn-sm btn-secondary" onclick="exportRankingCSV()" style="margin-left:auto;">📥 导出 CSV</button>
+</div>
+
+<!-- ===== 排名表 ===== -->
+<div class="card" style="padding:0;" id="ranking-result-card" hidden>
+    <div style="overflow-x:auto;">
+        <table class="ranking-table" id="ranking-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>设施名称</th>
+                    <th>类型</th>
+                    <th>风险等级</th>
+                    <th>风险得分</th>
+                    <th>社会权重</th>
+                    <th>优先级得分</th>
+                    <th>优先级</th>
+                    <th>关键影响因素</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="ranking-tbody"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 空状态 -->
+<div class="card empty-state" id="ranking-empty">
+    <div class="empty-icon">📊</div>
+    <div>导入设施数据或手动添加，点击"开始评估排序"生成维护优先级清单</div>
+    <div style="margin-top:8px;font-size:12px;color:var(--text-muted);">也可以从 <a href="/ipa">IPA 分析</a> 筛选出重点设施后跳转过来</div>
+</div>
+    <p style="font-size:11px;color:var(--text-muted);text-align:center;margin-top:20px;">
+        💡 设施可按"类型"汇总评估（如"木质长椅"代表小区所有木质长椅），也可按"个体"逐项评估（同类型多个体可命名为"长椅①""长椅②"等）。校准时建议统一口径。
+    </p>
+{% endblock %}
+
+{% block scripts %}
+<script>window.FACILITY_TYPES_JS = {{ facility_types | tojson | safe }};</script>
+<script src="{{ url_for('static', filename='js/ranking.js') }}"></script>
+{% endblock %}

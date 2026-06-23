@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block title %}设置 - 适老化设施维护优先级评估系统{% endblock %}
+
+{% block content %}
+<h2 style="margin-bottom:20px;">⚙️ 设置</h2>
+
+<!-- ===== 贝叶斯因子权重（置顶） ===== -->
+<div class="card">
+    <div class="card-header"><span class="card-icon">🎚️</span> 贝叶斯因子权重调节</div>
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">调整四个中间因子对最终风险的贡献权重（默认 1.0），调整后点击应用。</p>
+    {% for key, label, desc in [
+        ('exposure','设施退化暴露','日照、雨水、材料老化'),
+        ('usage','使用负荷','使用频率与强度'),
+        ('maintenance','治理滞后','响应速度与巡检频率'),
+        ('social_impact','正义修正因子','群体依赖与停用影响')
+    ] %}
+    <div class="form-group">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;">
+            <label class="form-label">{{ label }}</label>
+            <span class="slider-value" id="val-{{ key }}">{{ weights.get(key, 1.0) }}</span>
+            <span style="font-size:11px;color:var(--accent);margin-left:4px;min-width:36px;text-align:right;" id="pct-{{ key }}"></span>
+        </div>
+        <input type="range" class="weight-slider" id="weight-{{ key }}" min="0.5" max="2.5" step="0.1"
+               value="{{ weights.get(key, 1.0) }}" oninput="updateSliderVal('{{ key }}',this.value)">
+        <div style="font-size:11px;color:var(--text-muted);">{{ desc }}</div>
+    </div>
+    {% endfor %}
+    <div style="font-size:12px;color:var(--text-secondary);margin:8px 0;padding:8px 12px;background:var(--bg-secondary);border-radius:var(--radius-sm);" id="weight-summary"></div>
+    <button class="btn btn-primary" onclick="applyWeights()">🔄 应用权重</button>
+    <button class="btn btn-secondary btn-sm" onclick="resetWeights()" style="margin-left:8px;">恢复默认</button>
+    <div id="weight-result" style="margin-top:8px;font-size:13px;"></div>
+</div>
+
+<!-- ===== LLM API 配置 ===== -->
+<div class="card" style="margin-top:20px;">
+    <div class="card-header"><span class="card-icon">🔑</span> LLM API 配置</div>
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">
+        API Key 保存在你自己的浏览器中，不会上传到服务器。每个用户需填写自己的 Key。
+    </p>
+    <form id="llm-form">
+        <div class="form-group">
+            <label class="form-label">API Key</label>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <input type="password" class="form-input" id="api-key" placeholder="sk-..." style="flex:1;">
+                <button type="button" class="btn btn-sm btn-secondary" onclick="toggleKeyVis()" style="white-space:nowrap;">👁 显示</button>
+            </div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">已保存: <b id="key-status">未设置</b></div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">API Endpoint URL</label>
+            <input type="text" class="form-input" id="api-endpoint">
+            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">
+                快速填入：
+                <a href="#" onclick="setPreset('deepseek');return false;">DeepSeek</a> |
+                <a href="#" onclick="setPreset('openai');return false;">OpenAI</a> |
+                <a href="#" onclick="setPreset('zhipu');return false;">智谱GLM</a> |
+                <a href="#" onclick="setPreset('ollama');return false;">Ollama</a>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Model 名称</label>
+            <input type="text" class="form-input" id="api-model">
+        </div>
+        <div class="form-group">
+            <label class="checkbox-item checked" id="trust-checkbox" style="display:inline-flex;cursor:pointer;" onclick="this.classList.toggle('checked')">
+                <span style="font-size:13px;">💾 信任此设备（Key 持久保存，关闭浏览器后不丢失。取消勾选则仅本次会话有效）</span>
+            </label>
+        </div>
+        <div style="display:flex;gap:12px;">
+            <button type="submit" class="btn btn-primary">💾 保存</button>
+            <button type="button" class="btn btn-secondary" onclick="testLLM()">🔌 测试连接</button>
+        </div>
+    </form>
+    <div id="test-result" style="margin-top:12px;font-size:13px;"></div>
+</div>
+
+<!-- ===== 维护策略知识库 ===== -->
+<div class="card" style="margin-top:20px;">
+    <div class="card-header"><span class="card-icon">📚</span> 维护策略知识库</div>
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">
+        LLM 解读时会自动引用此处知识。可填入社区背景、设施维护经验、地方标准等内容。保存后存储在服务器 config.json 中。
+    </p>
+    <textarea class="admin-textarea" id="knowledge-base">{{ knowledge_base }}</textarea>
+    <div style="display:flex;gap:12px;margin-top:12px;">
+        <button class="btn btn-primary" onclick="saveKnowledgeBase()">💾 保存知识库</button>
+    </div>
+    <div id="kb-result" style="margin-top:8px;font-size:13px;"></div>
+</div>
+
+<!-- ===== 系统提示词 ===== -->
+<div class="card" style="margin-top:20px;">
+    <div class="card-header"><span class="card-icon">📝</span> 系统提示词（LLM 解读用）</div>
+    <textarea class="admin-textarea" id="sys-prompt">{{ system_prompt }}</textarea>
+    <div style="display:flex;gap:12px;margin-top:12px;">
+        <button class="btn btn-primary" onclick="savePrompt()">💾 保存</button>
+        <button class="btn btn-secondary" onclick="resetPrompt()">🔄 恢复默认</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ===== 加载已保存的 LLM 配置 =====
+(function loadStored(){
+    const key = localStorage.getItem('llm_api_key') || sessionStorage.getItem('llm_api_key') || '';
+    document.getElementById('api-key').value = key;
+    document.getElementById('api-endpoint').value = localStorage.getItem('llm_endpoint') || 'https://api.deepseek.com/v1/chat/completions';
+    document.getElementById('api-model').value = localStorage.getItem('llm_model') || 'deepseek-chat';
+    if (localStorage.getItem('trust_device') === 'false') {
+        document.getElementById('trust-checkbox').classList.remove('checked');
+    } else {
+        document.getElementById('trust-checkbox').classList.add('checked');
+        localStorage.setItem('trust_device', 'true');
+    }
+    updateKeyStatus();
+})();
+
+function toggleKeyVis(){
+    const i=document.getElementById('api-key');
+    i.type=i.type==='password'?'text':'password';
+    event.target.textContent=i.type==='password'?'👁 显示':'🙈 隐藏';
+}
+function updateKeyStatus(){
+    const key = document.getElementById('api-key').value;
+    document.getElementById('key-status').textContent = key ? (key.slice(0,4)+'****'+key.slice(-4)) : '未设置';
+}
+function setPreset(p){
+    const presets={
+        deepseek:{url:'https://api.deepseek.com/v1/chat/completions',model:'deepseek-chat'},
+        openai:{url:'https://api.openai.com/v1/chat/completions',model:'gpt-4o-mini'},
+        zhipu:{url:'https://open.bigmodel.cn/api/paas/v4/chat/completions',model:'glm-4-flash'},
+        ollama:{url:'http://localhost:11434/v1/chat/completions',model:'llama3'},
+    };
+    const c=presets[p];
+    document.getElementById('api-endpoint').value=c.url;
+    document.getElementById('api-model').value=c.model;
+    showToast('已填入 '+p);
+}
+
+document.getElementById('llm-form').addEventListener('submit',async e=>{
+    e.preventDefault();
+    const key=document.getElementById('api-key').value;
+    const endpoint=document.getElementById('api-endpoint').value;
+    const model=document.getElementById('api-model').value;
+    const trust=document.getElementById('trust-checkbox').classList.contains('checked');
+    localStorage.setItem('llm_endpoint',endpoint);
+    localStorage.setItem('llm_model',model);
+    if(trust){
+        localStorage.setItem('trust_device','true');
+        localStorage.setItem('llm_api_key',key);
+        sessionStorage.removeItem('llm_api_key');
+        showToast('✅ 已保存！Key 持久存储，关闭浏览器后仍保留');
+    }else{
+        localStorage.setItem('trust_device','false');
+        localStorage.removeItem('llm_api_key');
+        sessionStorage.setItem('llm_api_key',key);
+        showToast('⚠️ 已保存（仅本次会话）。关闭标签页后 Key 将丢失');
+    }
+    updateKeyStatus();
+});
+
+async function testLLM(){
+    const div=document.getElementById('test-result');
+    div.innerHTML='<span style="color:var(--text-secondary);">⏳ 测试中...</span>';
+    const r=await fetch('/api/llm/test',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({api_key:document.getElementById('api-key').value,
+            endpoint:document.getElementById('api-endpoint').value,
+            model:document.getElementById('api-model').value})});
+    const d=await r.json();
+    div.innerHTML=d.success?`<span style="color:var(--success);">✅ ${d.message}</span>`:`<span style="color:var(--danger);">❌ ${d.message}</span>`;
+}
+
+// ===== 权重 =====
+const WEIGHT_KEYS = ['exposure','usage','maintenance','social_impact'];
+const WEIGHT_NAMES = {exposure:'退化暴露',usage:'使用负荷',maintenance:'治理滞后',social_impact:'正义修正'};
+function updateSliderVal(k,v){
+    document.getElementById('val-'+k).textContent=parseFloat(v).toFixed(1);
+    refreshWeightPct();
+}
+function refreshWeightPct(){
+    let total = 0;
+    const vals = {};
+    WEIGHT_KEYS.forEach(k => { vals[k] = parseFloat(document.getElementById('weight-'+k).value); total += vals[k]; });
+    WEIGHT_KEYS.forEach(k => {
+        const pct = total > 0 ? (vals[k]/total*100) : 25;
+        document.getElementById('pct-'+k).textContent = pct.toFixed(0) + '%';
+    });
+    const parts = WEIGHT_KEYS.map(k => WEIGHT_NAMES[k]+' '+vals[k].toFixed(1)+'（'+ (total>0?(vals[k]/total*100).toFixed(0):25) +'%）');
+    document.getElementById('weight-summary').innerHTML = '📊 权重占比：' + parts.join(' | ');
+}
+// 初始加载时计算一次
+refreshWeightPct();
+
+async function applyWeights(){
+    const w={};['exposure','usage','maintenance','social_impact'].forEach(k=>{w[k]=parseFloat(document.getElementById('weight-'+k).value);});
+    const r=await fetch('/api/admin/weights',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(w)});
+    const d=await r.json();
+    document.getElementById('weight-result').innerHTML=d.success?'<span style="color:var(--success);">✅ 已更新</span>':'<span style="color:var(--danger);">❌ 失败</span>';
+}
+function resetWeights(){['exposure','usage','maintenance','social_impact'].forEach(k=>{document.getElementById('weight-'+k).value='1.0';updateSliderVal(k,'1.0');});showToast('已恢复默认（需应用）');}
+
+// ===== 提示词 =====
+async function savePrompt(){
+    const r=await fetch('/api/admin/prompt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:document.getElementById('sys-prompt').value})});
+    showToast((await r.json()).success?'已保存':'保存失败','error');
+}
+function resetPrompt(){
+    document.getElementById('sys-prompt').value='你是一位经验丰富的老旧小区适老化设施维护专家。你擅长分析公共设施的磨损风险，评估维护优先级，并为社区管理者提供切实可行的维护建议。\n\n禁止使用Markdown格式，请使用纯文本格式输出，具体要求：\n1. 小标题用【】包裹，如【当前风险解读】\n2. 重点内容用「」标注，不要使用 ** 加粗\n3. 列举项用数字 1. 2. 3.，不要使用 * 或 -\n\n在给出建议时，请遵循以下原则：\n1. 优先关注涉及老人和儿童安全的设施\n2. 从"被动维修"转向"主动预防"的角度思考\n3. 考虑有限维护预算下的资源最优分配\n4. 给出短期应急措施和长期预防策略\n5. 用通俗易懂的语言解释技术概念\n\n【多情景对比解读】\n当收到A/B/C三情景对比数据时：\n1. 对比三种维护策略的优先级得分和风险概率差异\n2. 分析情景C（动态调配）相比情景A（被动维修）的改善幅度\n3. 如果情景B（定期预防）和情景C得分接近，说明定期维护已基本足够，无需过度投入\n4. 如果情景C显著优于A和B，则建议优先考虑动态调配策略\n5. 给出适合该设施的推荐策略及简要理由\n6. 从空间正义角度评述不同策略对老人、儿童等脆弱群体的影响差异';
+    showToast('已恢复默认（需保存）');
+}
+
+// ===== 知识库 =====
+async function saveKnowledgeBase(){
+    const kb = document.getElementById('knowledge-base').value;
+    const r = await fetch('/api/admin/knowledge-base', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({knowledge_base: kb})
+    });
+    const d = await r.json();
+    document.getElementById('kb-result').innerHTML = d.success
+        ? '<span style="color:var(--success);">✅ 知识库已保存</span>'
+        : '<span style="color:var(--danger);">❌ 保存失败</span>';
+}
+</script>
+{% endblock %}
