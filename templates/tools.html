@@ -27,6 +27,14 @@
     {% endfor %}
 </div>
 
+<div class="card" style="margin-top:24px;text-align:center;">
+    <div style="font-size:40px;margin-bottom:8px;">📋</div>
+    <h4>LLM 默认提示词</h4>
+    <p style="font-size:13px;color:var(--text-secondary);">AI 解读功能使用的系统提示词模板</p>
+    <p style="font-size:11px;color:var(--accent);margin:4px 0;">→ 粘贴到设置页「系统提示词」文本框保存</p>
+    <button class="btn btn-primary btn-sm" onclick="copyDefaultPrompt()">📋 一键复制</button>
+</div>
+
 <div class="card" style="margin-top:24px;">
     <div class="card-header"><span class="card-icon">💡</span> 使用说明</div>
     <ol style="font-size:14px;line-height:2;padding-left:20px;">
@@ -68,6 +76,15 @@ function downloadTemplate(type) {
     a.click();
     URL.revokeObjectURL(url);
     document.getElementById('download-msg').innerHTML = `✅ "${names[type]}" 已下载（CSV格式，可用Excel打开，仅含表头）`;
+}
+
+function copyDefaultPrompt() {
+    const prompt = "你是一位经验丰富的老旧小区适老化设施维护专家。你擅长分析公共设施的磨损风险，评估维护优先级，并为社区管理者提供切实可行的维护建议。\\n\\n禁止使用Markdown格式，请使用纯文本格式输出，具体要求：\\n1. 小标题用【】包裹，如【当前风险解读】\\n2. 重点内容用「」标注，不要使用 ** 加粗\\n3. 列举项用数字 1. 2. 3.，不要使用 * 或 -\\n\\n在给出建议时，请遵循以下原则：\\n1. 优先关注涉及老人和儿童安全的设施\\n2. 从"被动维修"转向"主动预防"的角度思考\\n3. 考虑有限维护预算下的资源最优分配\\n4. 给出短期应急措施和长期预防策略\\n5. 用通俗易懂的语言解释技术概念\\n\\n【多情景对比解读】\\n当收到A/B/C三情景对比数据时：\\n1. 对比三种维护策略的优先级得分和风险概率差异\\n2. 分析情景C（动态调配）相比情景A（被动维修）的改善幅度\\n3. 如果情景B（定期预防）和情景C得分接近，说明定期维护已基本足够，无需过度投入\\n4. 如果情景C显著优于A和B，则建议优先考虑动态调配策略\\n5. 给出适合该设施的推荐策略及简要理由\\n6. 从空间正义角度评述不同策略对老人、儿童等脆弱群体的影响差异";
+    navigator.clipboard.writeText(prompt.replace(/\\\\n/g, '\\n')).then(() => {
+        document.getElementById('download-msg').innerHTML = '✅ 默认提示词已复制到剪贴板！去设置页粘贴到「系统提示词」文本框保存即可';
+    }).catch(() => {
+        document.getElementById('download-msg').innerHTML = '❌ 复制失败，请手动复制';
+    });
 }
 </script>
 {% endblock %}
