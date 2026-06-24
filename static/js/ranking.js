@@ -18,28 +18,29 @@ const FIELD_OPTS = {
     sun_shade:['暴晒','有遮'],
     use_freq:['低','中','高'],
     user_group:['成人','老人','儿童'],
-    use_intensity:['静坐','健身','攀爬'],
+    use_intensity:['静坐','摇晃','冲击'],
     inspect_freq:['每周','每月','每季'],
     repair_time:['<3天','3-14天','>14天'],
     dependency:['低','中','高'],
     outage_impact:['轻微','中等','严重'],
+    replaceable:['可替换','不可替换'],
 };
 
 // ===== 设施类型默认值 =====
 const DEFAULTS = {
-    '长椅':   {material:'木质',install_age:'3-8年',water_log:'中',sun_shade:'有遮',use_freq:'高',user_group:'老人',use_intensity:'静坐',inspect_freq:'每月',repair_time:'3-14天',dependency:'中',outage_impact:'中等',user_groups:['老人','成年人']},
-    '儿童滑梯':{material:'塑料',install_age:'3-8年',water_log:'中',sun_shade:'暴晒',use_freq:'高',user_group:'儿童',use_intensity:'攀爬',inspect_freq:'每月',repair_time:'3-14天',dependency:'高',outage_impact:'严重',user_groups:['儿童']},
-    '健身器材':{material:'金属',install_age:'3-8年',water_log:'低',sun_shade:'有遮',use_freq:'中',user_group:'老人',use_intensity:'健身',inspect_freq:'每月',repair_time:'3-14天',dependency:'高',outage_impact:'严重',user_groups:['老人','成年人']},
-    '晾衣架': {material:'金属',install_age:'3-8年',water_log:'高',sun_shade:'暴晒',use_freq:'中',user_group:'成人',use_intensity:'静坐',inspect_freq:'每季',repair_time:'>14天',dependency:'低',outage_impact:'轻微',user_groups:['租户','老人']},
-    '凉亭':   {material:'木质',install_age:'<3年',water_log:'低',sun_shade:'有遮',use_freq:'低',user_group:'老人',use_intensity:'静坐',inspect_freq:'每周',repair_time:'<3天',dependency:'低',outage_impact:'轻微',user_groups:['老人','成年人']},
+    '长椅':   {material:'木质',install_age:'3-8年',water_log:'中',sun_shade:'有遮',use_freq:'高',user_group:'老人',use_intensity:'静坐',inspect_freq:'每月',repair_time:'3-14天',replaceable:'可替换',dependency:'中',outage_impact:'中等',user_groups:['老人','成年人']},
+    '儿童滑梯':{material:'塑料',install_age:'3-8年',water_log:'中',sun_shade:'暴晒',use_freq:'高',user_group:'儿童',use_intensity:'冲击',inspect_freq:'每月',repair_time:'3-14天',dependency:'高',outage_impact:'严重',user_groups:['儿童']},
+    '健身器材':{material:'金属',install_age:'3-8年',water_log:'低',sun_shade:'有遮',use_freq:'中',user_group:'老人',use_intensity:'摇晃',inspect_freq:'每月',repair_time:'3-14天',dependency:'高',outage_impact:'严重',user_groups:['老人','成年人']},
+    '晾衣架': {material:'金属',install_age:'3-8年',water_log:'高',sun_shade:'暴晒',use_freq:'中',user_group:'成人',use_intensity:'静坐',inspect_freq:'每季',repair_time:'>14天',replaceable:'可替换',dependency:'低',outage_impact:'轻微',user_groups:['租户','老人']},
+    '凉亭':   {material:'木质',install_age:'<3年',water_log:'低',sun_shade:'有遮',use_freq:'低',user_group:'老人',use_intensity:'静坐',inspect_freq:'每周',repair_time:'<3天',replaceable:'可替换',dependency:'低',outage_impact:'轻微',user_groups:['老人','成年人']},
     '护栏':   {material:'金属',install_age:'3-8年',water_log:'低',sun_shade:'暴晒',use_freq:'低',user_group:'儿童',use_intensity:'静坐',inspect_freq:'每月',repair_time:'3-14天',dependency:'高',outage_impact:'严重',user_groups:['儿童','成年人']},
-    '乒乓球桌':{material:'金属',install_age:'>8年',water_log:'高',sun_shade:'暴晒',use_freq:'高',user_group:'成人',use_intensity:'健身',inspect_freq:'每季',repair_time:'>14天',dependency:'中',outage_impact:'中等',user_groups:['成年人','儿童']},
-    '信息公告栏':{material:'金属',install_age:'<3年',water_log:'低',sun_shade:'有遮',use_freq:'低',user_group:'成人',use_intensity:'静坐',inspect_freq:'每周',repair_time:'<3天',dependency:'低',outage_impact:'轻微',user_groups:['成年人','租户']},
+    '乒乓球桌':{material:'金属',install_age:'>8年',water_log:'高',sun_shade:'暴晒',use_freq:'高',user_group:'成人',use_intensity:'摇晃',inspect_freq:'每季',repair_time:'>14天',replaceable:'可替换',dependency:'中',outage_impact:'中等',user_groups:['成年人','儿童']},
+    '信息公告栏':{material:'金属',install_age:'<3年',water_log:'低',sun_shade:'有遮',use_freq:'低',user_group:'成人',use_intensity:'静坐',inspect_freq:'每周',repair_time:'<3天',replaceable:'可替换',dependency:'低',outage_impact:'轻微',user_groups:['成年人','租户']},
     '无障碍坡道':{material:'金属',install_age:'>8年',water_log:'中',sun_shade:'暴晒',use_freq:'中',user_group:'老人',use_intensity:'静坐',inspect_freq:'每月',repair_time:'3-14天',dependency:'高',outage_impact:'严重',user_groups:['行动不便者','老人']},
-    '减速带':  {material:'金属',install_age:'>8年',water_log:'低',sun_shade:'暴晒',use_freq:'高',user_group:'成人',use_intensity:'静坐',inspect_freq:'每季',repair_time:'>14天',dependency:'低',outage_impact:'中等',user_groups:['成年人','儿童']},
+    '减速带':  {material:'金属',install_age:'>8年',water_log:'低',sun_shade:'暴晒',use_freq:'高',user_group:'成人',use_intensity:'静坐',inspect_freq:'每季',repair_time:'>14天',replaceable:'可替换',dependency:'低',outage_impact:'中等',user_groups:['成年人','儿童']},
     '路灯':    {material:'金属',install_age:'>8年',water_log:'低',sun_shade:'暴晒',use_freq:'高',user_group:'老人',use_intensity:'静坐',inspect_freq:'每月',repair_time:'3-14天',dependency:'高',outage_impact:'严重',user_groups:['老人','行动不便者']},
-    '可拆卸路牌':{material:'金属',install_age:'3-8年',water_log:'低',sun_shade:'有遮',use_freq:'低',user_group:'成人',use_intensity:'静坐',inspect_freq:'每季',repair_time:'>14天',dependency:'低',outage_impact:'轻微',user_groups:['成年人','租户']},
-    '遮阳棚':  {material:'塑料',install_age:'3-8年',water_log:'中',sun_shade:'暴晒',use_freq:'中',user_group:'老人',use_intensity:'静坐',inspect_freq:'每月',repair_time:'3-14天',dependency:'中',outage_impact:'中等',user_groups:['老人','成年人']},
+    '可拆卸路牌':{material:'金属',install_age:'3-8年',water_log:'低',sun_shade:'有遮',use_freq:'低',user_group:'成人',use_intensity:'静坐',inspect_freq:'每季',repair_time:'>14天',replaceable:'可替换',dependency:'低',outage_impact:'轻微',user_groups:['成年人','租户']},
+    '遮阳棚':  {material:'塑料',install_age:'3-8年',water_log:'中',sun_shade:'暴晒',use_freq:'中',user_group:'老人',use_intensity:'静坐',inspect_freq:'每月',repair_time:'3-14天',replaceable:'可替换',dependency:'中',outage_impact:'中等',user_groups:['老人','成年人']},
 };
 
 // ===== 页面初始化 =====
@@ -58,7 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     water_log: d.water_log, sun_shade: d.sun_shade,
                     use_freq: d.use_freq, user_group: d.user_group,
                     use_intensity: d.use_intensity, inspect_freq: d.inspect_freq,
-                    repair_time: d.repair_time, dependency: d.dependency,
+                    repair_time: d.repair_time, replaceable: d.replaceable||'可替换', dependency: d.dependency,
                     outage_impact: d.outage_impact, user_groups: [...d.user_groups],
                 });
             }
@@ -96,7 +97,7 @@ function addManualRow(type='', name='') {
         water_log: d.water_log, sun_shade: d.sun_shade,
         use_freq: d.use_freq, user_group: d.user_group,
         use_intensity: d.use_intensity, inspect_freq: d.inspect_freq,
-        repair_time: d.repair_time, dependency: d.dependency,
+        repair_time: d.repair_time, replaceable: d.replaceable||'可替换', dependency: d.dependency,
         outage_impact: d.outage_impact, user_groups: [...d.user_groups],
     });
     renderFacilityList();
@@ -107,7 +108,7 @@ function onNewTypeChange() {
     const preview = document.getElementById('new-defaults-preview');
     if (!type || !DEFAULTS[type]) { preview.textContent = ''; return; }
     const d = DEFAULTS[type];
-    preview.textContent = `默认填充：${d.material} | ${d.install_age} | 积水${d.water_log} | ${d.sun_shade} | 频率${d.use_freq} | ${d.user_group} | ${d.use_intensity} | 巡检${d.inspect_freq} | 响应${d.repair_time} | 依赖${d.dependency} | 停用影响${d.outage_impact} | 群体[${d.user_groups.join(',')}]`;
+    preview.textContent = `默认填充：${d.material} | ${d.install_age} | 积水${d.water_log} | ${d.sun_shade} | 频率${d.use_freq} | ${d.user_group} | ${d.use_intensity} | 巡检${d.inspect_freq} | 响应${d.repair_time} | 可替换${d.replaceable||'可替换'} | 依赖${d.dependency} | 停用影响${d.outage_impact} | 群体[${d.user_groups.join(',')}]`;
 }
 
 function confirmAdd() {
@@ -144,7 +145,7 @@ function renderFacilityList() {
     const FIELD_LABELS = {
         material:'材料',install_age:'安装年龄',water_log:'积水',sun_shade:'遮阴',
         use_freq:'使用频率',user_group:'主要群体',use_intensity:'使用强度',
-        inspect_freq:'巡检',repair_time:'响应',dependency:'依赖度',outage_impact:'停用影响',
+        inspect_freq:'巡检',repair_time:'响应',replaceable:'可替换',dependency:'依赖度',outage_impact:'停用影响',
     };
 
     let html = '';
@@ -221,7 +222,7 @@ async function handleRankingImport(event) {
         let added = 0, invalidCount = 0;
         data.rows.forEach(row => {
             const type = row.facility_type || '';
-            const base = DEFAULTS[type] || {material:'金属',install_age:'3-8年',water_log:'中',sun_shade:'有遮',use_freq:'中',user_group:'成人',use_intensity:'静坐',inspect_freq:'每月',repair_time:'3-14天',dependency:'中',outage_impact:'中等',user_groups:['老人']};
+            const base = DEFAULTS[type] || {material:'金属',install_age:'3-8年',water_log:'中',sun_shade:'有遮',use_freq:'中',user_group:'成人',use_intensity:'静坐',inspect_freq:'每月',repair_time:'3-14天',replaceable:'可替换',dependency:'中',outage_impact:'中等',user_groups:['老人']};
             const fields = {};
             for (const key of Object.keys(FIELD_OPTS)) {
                 const raw = row[key] || '';
@@ -418,6 +419,6 @@ function validOptionsHint(key) {
     return '请规定' + ({
         material:'材料',install_age:'安装年龄',water_log:'积水风险',sun_shade:'遮阴',
         use_freq:'使用频率',user_group:'主要使用群体',use_intensity:'使用强度',
-        inspect_freq:'巡检频率',repair_time:'维修响应',dependency:'群体依赖度',outage_impact:'停用影响等级',
+        inspect_freq:'巡检频率',repair_time:'维修响应',replaceable:'是否可替换模块',dependency:'群体依赖度',outage_impact:'停用影响等级',
     }[key] || key) + '的数值范围为 ' + opts.map(o => `"${o}"`).join('、');
 }

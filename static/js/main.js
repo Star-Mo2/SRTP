@@ -31,7 +31,7 @@ function getModel() { return localStorage.getItem('llm_model') || 'deepseek-chat
 const FORM_FIELDS = ['facility_name','facility_type',
     'material','install_age','water_log','sun_shade',
     'use_freq','user_group','use_intensity',
-    'inspect_freq','repair_time','dependency','outage_impact'];
+    'inspect_freq','repair_time','replaceable','dependency','outage_impact'];
 const FORM_GROUPS_KEY = 'form_user_groups';
 
 function saveFormToSession() {
@@ -180,14 +180,14 @@ function onTypeChange() {
     const presets = {
         '长椅': {material:'木质',install_age:'3-8年',water_log:'中',sun_shade:'有遮',
                  use_freq:'高',user_group:'老人',use_intensity:'静坐',
-                 inspect_freq:'每月',repair_time:'3-14天',
+                 inspect_freq:'每月',repair_time:'3-14天',replaceable:'可替换',
                  dependency:'中',outage_impact:'中等',groups:['老人','成年人']},
         '儿童滑梯':{material:'塑料',install_age:'3-8年',water_log:'中',sun_shade:'暴晒',
-                   use_freq:'高',user_group:'儿童',use_intensity:'攀爬',
-                   inspect_freq:'每月',repair_time:'3-14天',
+                   use_freq:'高',user_group:'儿童',use_intensity:'冲击',
+                   inspect_freq:'每月',repair_time:'3-14天',replaceable:'可替换',
                    dependency:'高',outage_impact:'严重',groups:['儿童']},
         '健身器材':{material:'金属',install_age:'3-8年',water_log:'低',sun_shade:'有遮',
-                   use_freq:'中',user_group:'老人',use_intensity:'健身',
+                   use_freq:'中',user_group:'老人',use_intensity:'摇晃',
                    inspect_freq:'每月',repair_time:'3-14天',
                    dependency:'高',outage_impact:'严重',groups:['老人','成年人']},
         '晾衣架':{material:'金属',install_age:'3-8年',water_log:'高',sun_shade:'暴晒',
@@ -203,7 +203,7 @@ function onTypeChange() {
                inspect_freq:'每月',repair_time:'3-14天',
                dependency:'高',outage_impact:'严重',groups:['儿童','成年人']},
         '乒乓球桌':{material:'金属',install_age:'>8年',water_log:'高',sun_shade:'暴晒',
-                   use_freq:'高',user_group:'成人',use_intensity:'健身',
+                   use_freq:'高',user_group:'成人',use_intensity:'摇晃',
                    inspect_freq:'每季',repair_time:'>14天',
                    dependency:'中',outage_impact:'中等',groups:['成年人','儿童']},
         '信息公告栏':{material:'金属',install_age:'<3年',water_log:'低',sun_shade:'有遮',
@@ -219,7 +219,7 @@ function onTypeChange() {
     if (!presets[type]) return;
     const p = presets[type];
     ['material','install_age','water_log','sun_shade','use_freq','user_group','use_intensity',
-     'inspect_freq','repair_time','dependency','outage_impact'].forEach(k => {
+     'inspect_freq','repair_time','replaceable','dependency','outage_impact'].forEach(k => {
         const el = document.getElementById(k);
         if (el) el.value = p[k];
     });
@@ -269,6 +269,7 @@ document.getElementById('evaluate-form').addEventListener('submit', async e => {
         repair_time: document.getElementById('repair_time').value,
         dependency: document.getElementById('dependency').value,
         outage_impact: document.getElementById('outage_impact').value,
+        replaceable: document.getElementById('replaceable').value,
         user_groups: groups,
     };
 
@@ -377,7 +378,7 @@ async function showWhatIf() {
         {key:'sun_shade',label:'遮阴情况',opts:['暴晒','有遮']},
         {key:'use_freq',label:'使用频率',opts:['低','中','高']},
         {key:'user_group',label:'主要群体',opts:['成人','老人','儿童']},
-        {key:'use_intensity',label:'使用强度',opts:['静坐','健身','攀爬']},
+        {key:'use_intensity',label:'使用强度',opts:['静坐','摇晃','冲击']},
         {key:'inspect_freq',label:'巡检频率',opts:['每周','每月','每季']},
         {key:'repair_time',label:'维修响应',opts:['<3天','3-14天','>14天']},
         {key:'dependency',label:'群体依赖',opts:['低','中','高']},
@@ -399,7 +400,7 @@ async function showWhatIf() {
 async function runMultiWhatIf() {
     const resultDiv = document.getElementById('whatif-result');
     resultDiv.innerHTML = '<span style="color:var(--text-secondary);">⏳ 计算中...</span>';
-    const keys = ['material','install_age','water_log','sun_shade','use_freq','user_group','use_intensity','inspect_freq','repair_time','dependency','outage_impact'];
+    const keys = ['material','install_age','water_log','sun_shade','use_freq','user_group','use_intensity','inspect_freq','repair_time','replaceable','dependency','outage_impact'];
     const payload = {facility_name: currentResult.facility_name+'（模拟）', facility_type: currentResult.facility_type, user_groups: currentResult.user_groups};
     keys.forEach(k => { payload[k] = document.getElementById('whatif-'+k).value; });
     try {
@@ -429,7 +430,7 @@ async function showScenario() {
     panel.innerHTML = '<div class="interpretation-loading"><div class="spinner"></div><div>计算三种情景...</div></div>';
     panel.style.display = '';
 
-    const keys = ['material','install_age','water_log','sun_shade','use_freq','user_group','use_intensity','inspect_freq','repair_time','dependency','outage_impact'];
+    const keys = ['material','install_age','water_log','sun_shade','use_freq','user_group','use_intensity','inspect_freq','repair_time','replaceable','dependency','outage_impact'];
     const payload = {facility_type:currentResult.facility_type,user_groups:currentResult.user_groups,facility_name:currentResult.facility_name};
     keys.forEach(k=>{payload[k]=currentResult[k];});
 
@@ -454,7 +455,7 @@ async function showScenario() {
 function loadFromURLParams() {
     const params = new URLSearchParams(window.location.search);
     const FIELD_KEYS = ['material','install_age','water_log','sun_shade',
-        'use_freq','user_group','use_intensity','inspect_freq','repair_time',
+        'use_freq','user_group','use_intensity','inspect_freq','repair_time','replaceable',
         'dependency','outage_impact'];
     let hasParams = false;
 

@@ -145,6 +145,7 @@ def api_evaluate():
         facility_type=data.get("facility_type","长椅"),
         user_groups=data.get("user_groups",["老人"]),
         facility_name=data.get("facility_name",""),
+        replaceable=data.get("replaceable","可替换"),
     )
     record_id = save_evaluation(result)
     return jsonify({"success":True, "record_id":record_id, "result":_result_to_row(result), "raw":result})
@@ -189,6 +190,7 @@ def api_ranking_evaluate():
             "use_freq": "中", "user_group": "成人", "use_intensity": "静坐",
             "inspect_freq": "每月", "repair_time": "3-14天",
             "dependency": "中", "outage_impact": "中等",
+            "replaceable": "可替换",
             "user_groups": ["老人"],
         }
         # 合法的字段名白名单
@@ -213,6 +215,7 @@ def api_ranking_evaluate():
                 dependency=params["dependency"], outage_impact=params["outage_impact"],
                 facility_type=params["facility_type"], user_groups=params["user_groups"],
                 facility_name=params["facility_name"],
+                replaceable=params["replaceable"],
             )
             key_factors = _extract_key_factors(r, engine)
             results.append({
@@ -225,7 +228,8 @@ def api_ranking_evaluate():
                 "_params": {k: r[k] for k in [
                     "material", "install_age", "water_log", "sun_shade",
                     "use_freq", "user_group", "use_intensity",
-                    "inspect_freq", "repair_time", "dependency", "outage_impact",
+                    "inspect_freq", "repair_time", "replaceable",
+                    "dependency", "outage_impact",
                 ]},
             })
 
@@ -247,9 +251,10 @@ def api_evaluate_batch():
         ("material","金属"),("install_age","3-8年"),("water_log","中"),("sun_shade","有遮"),
         ("use_freq","中"),("user_group","成人"),("use_intensity","静坐"),
         ("inspect_freq","每月"),("repair_time","3-14天"),
-        ("dependency","中"),("outage_impact","中等"),
+        ("dependency","中"),("outage_impact","中等"),("replaceable","可替换"),
     ]}
     defaults["user_groups"] = data.get("user_groups",["老人"])
+    defaults["replaceable"] = data.get("replaceable","可替换")
     types = data.get("facility_types", FACILITY_TYPES[:5])
     results = []
     for ft in types:
@@ -265,7 +270,7 @@ def api_what_if():
     current = {k: data[k] for k in ["material","install_age","water_log","sun_shade",
                                       "use_freq","user_group","use_intensity",
                                       "inspect_freq","repair_time",
-                                      "dependency","outage_impact"]}
+                                      "dependency","outage_impact","replaceable"]}
     result = engine.what_if(current, data.get("change_var",""), data.get("new_value",""))
     return jsonify({"success":True, "result":result})
 
@@ -284,6 +289,7 @@ def api_scenario_compare():
         facility_type=data.get("facility_type","长椅"),
         user_groups=data.get("user_groups",["老人"]),
         facility_name=data.get("facility_name",""),
+        replaceable=data.get("replaceable","可替换"),
     )
     return jsonify({"success":True, "scenarios": result})
 
@@ -326,6 +332,7 @@ COLUMN_MAP = {
     "使用强度":"use_intensity","强度":"use_intensity","使用方式":"use_intensity",
     "巡检频率":"inspect_freq","巡检":"inspect_freq","检查频率":"inspect_freq",
     "维修响应":"repair_time","维修响应时间":"repair_time","响应时间":"repair_time","维修":"repair_time",
+    "是否可替换模块":"replaceable","可替换模块":"replaceable","可替换性":"replaceable","是否可替换":"replaceable","模块替换":"replaceable",
     "群体依赖度":"dependency","群体依赖":"dependency","依赖程度":"dependency","依赖":"dependency",
     "无障碍设施":"outage_impact","无障碍":"outage_impact",
     # 停用后影响等级
@@ -496,6 +503,7 @@ def api_rotation_plan():
                 dependency=s.get("dependency", "中"),
                 outage_impact=s.get("outage_impact", "中等"),
                 facility_type=s.get("facility_type", "长椅"),
+                replaceable=s.get("replaceable", "可替换"),
                 user_groups=s.get("user_groups", ["老人"]),
                 facility_name=s.get("facility_name", ""),
             )
@@ -754,7 +762,7 @@ def api_export_csv():
     w.writerow(["时间","设施名称","类型","使用群体",
                 "材料","安装年龄","积水","遮阴",
                 "使用频率","主要群体","使用强度",
-                "巡检频率","维修响应","群体依赖","停用后影响",
+                "巡检频率","维修响应","是否可替换模块","群体依赖","停用后影响",
                 "暴露","负荷","维护","社会影响",
                 "风险等级","低风险%","中风险%","高风险%",
                 "风险得分","社会权重","优先级得分","优先级等级"])
@@ -763,7 +771,7 @@ def api_export_csv():
                     ", ".join(r["user_groups"]),
                     r.get("material",""),r.get("install_age",""),r.get("water_log",""),r.get("sun_shade",""),
                     r.get("use_freq",""),r.get("user_group",""),r.get("use_intensity",""),
-                    r.get("inspect_freq",""),r.get("repair_time",""),r.get("dependency",""),r.get("outage_impact",""),
+                    r.get("inspect_freq",""),r.get("repair_time",""),r.get("replaceable",""),r.get("dependency",""),r.get("outage_impact",""),
                     r.get("exposure",""),r.get("usage",""),r.get("maintenance",""),r.get("social_impact",""),
                     r["risk_level"],r["prob_low"],r["prob_med"],r["prob_high"],
                     r["risk_score"],r["social_weight"],r["priority_score"],r["priority_level"]])

@@ -1,7 +1,8 @@
 """
 ============================================================
- 贝叶斯网络推理引擎 v3.0 — 三层分层结构
- 11个观测节点 → 4个中间因子 → 1个目标风险
+ 贝叶斯网络推理引擎 v3.1 — 三层分层结构
+ 12个观测节点 → 4个中间因子 → 1个目标风险
+ v3.1: 新增 replaceable（是否可替换模块）+ use_intensity 取值改为静坐/摇晃/冲击
 ============================================================
 """
 import itertools
@@ -9,18 +10,19 @@ from pgmpy.models import DiscreteBayesianNetwork
 from pgmpy.factors.discrete import TabularCPD
 from pgmpy.inference import VariableElimination
 
-# ===== 第一层：11 个可观测叶子节点 =====
+# ===== 第一层：12 个可观测叶子节点 =====
 MATERIAL       = ["木质","金属","塑料"]
 INSTALL_AGE    = ["<3年","3-8年",">8年"]
 WATER_LOG      = ["低","中","高"]
 SUN_SHADE      = ["暴晒","有遮"]
 USE_FREQ       = ["低","中","高"]
 USER_GROUP     = ["成人","老人","儿童"]
-USE_INTENSITY  = ["静坐","健身","攀爬"]
+USE_INTENSITY  = ["静坐","摇晃","冲击"]
 INSPECT_FREQ   = ["每周","每月","每季"]
 REPAIR_TIME    = ["<3天","3-14天",">14天"]
 DEPENDENCY     = ["低","中","高"]
 OUTAGE_IMPACT  = ["轻微","中等","严重"]
+REPLACEABLE    = ["可替换","不可替换"]
 
 # ===== 第二层：4 个中间因子节点（与旧版兼容） =====
 EXPOSURE       = ["低暴露","中暴露","高暴露"]
@@ -93,6 +95,7 @@ class BNFacilityEngine:
             ("use_intensity","usage"),
             ("inspect_freq","maintenance"),
             ("repair_time", "maintenance"),
+            ("replaceable", "maintenance"),
             ("dependency",    "social_impact"),
             ("outage_impact","social_impact"),
         ])
@@ -113,6 +116,7 @@ class BNFacilityEngine:
             leaf_cpd("repair_time",    REPAIR_TIME,    [0.20,0.45,0.35]),
             leaf_cpd("dependency",     DEPENDENCY,     [0.30,0.40,0.30]),
             leaf_cpd("outage_impact",  OUTAGE_IMPACT,  [0.30,0.40,0.30]),
+            leaf_cpd("replaceable",   REPLACEABLE,    [0.50,0.50]),
         )
 
         # ---- 第二层：中间因子 CPT（用评分函数生成）----
@@ -138,15 +142,15 @@ class BNFacilityEngine:
             state_names={"usage":USAGE,"use_freq":USE_FREQ,"user_group":USER_GROUP,
                          "use_intensity":USE_INTENSITY}))
 
-        # maintenance: 2 parents, 3*3=9 combos, max_raw=2+2=4
-        maint_parents = list(itertools.product(range(3),range(3)))
-        def maint_score(combo): # inspect_freq, repair_time
-            ins_map={0:0.0,1:1.0,2:2.0}; rep_map={0:0.0,1:1.0,2:2.0}
-            return ins_map[combo[0]]+rep_map[combo[1]]
-        model.add_cpds(TabularCPD("maintenance",3, _score_cpt(maint_parents,maint_score,MAINTENANCE,4),
-            evidence=["inspect_freq","repair_time"], evidence_card=[3,3],
-            state_names={"maintenance":MAINTENANCE,"inspect_freq":INSPECT_FREQ,
-                         "repair_time":REPAIR_TIME}))
+        # maintenance: 3 parents, 2*3*3=18 combos, max_raw=0/1（可/不可替换）+2+2=5
+        maint_parents = list(itertools.product(range(2),range(3),range(3)))
+        def maint_score(combo): # replaceable, inspect_freq, repair_time
+            rep_mod={0:0.0,1:1.0}; ins_map={0:0.0,1:1.0,2:2.0}; rep_map={0:0.0,1:1.0,2:2.0}
+            return rep_mod[combo[0]]+ins_map[combo[1]]+rep_map[combo[2]]
+        model.add_cpds(TabularCPD("maintenance",3, _score_cpt(maint_parents,maint_score,MAINTENANCE,5),
+            evidence=["replaceable","inspect_freq","repair_time"], evidence_card=[2,3,3],
+            state_names={"maintenance":MAINTENANCE,"replaceable":REPLACEABLE,
+                         "inspect_freq":INSPECT_FREQ,"repair_time":REPAIR_TIME}))
 
         # social_impact: 2 parents, 3*3=9 combos, max_raw=2+2=4
         soc_parents = list(itertools.product(range(3),range(3)))
@@ -190,8 +194,8 @@ class BNFacilityEngine:
                  use_freq, user_group, use_intensity,
                  inspect_freq, repair_time,
                  dependency, outage_impact,
-                 facility_type, user_groups, facility_name=""):
-        """用 11 个观测变量进行贝叶斯推理（直接联合推理，保留完整概率信息）"""
+                 facility_type, user_groups, facility_name="", replaceable="可替换"):
+        """用 12 个观测变量进行贝叶斯推理（直接联合推理，保留完整概率信息）"""
 
         evidence = {
             "material":material, "install_age":install_age,
@@ -199,6 +203,7 @@ class BNFacilityEngine:
             "use_freq":use_freq, "user_group":user_group,
             "use_intensity":use_intensity,
             "inspect_freq":inspect_freq, "repair_time":repair_time,
+            "replaceable":replaceable,
             "dependency":dependency, "outage_impact":outage_impact,
         }
 
@@ -256,6 +261,7 @@ class BNFacilityEngine:
             "material": material, "install_age": install_age, "water_log": water_log, "sun_shade": sun_shade,
             "use_freq": use_freq, "user_group": user_group, "use_intensity": use_intensity,
             "inspect_freq": inspect_freq, "repair_time": repair_time,
+            "replaceable": replaceable,
             "dependency": dependency, "outage_impact": outage_impact,
             # 中间因子标签（仅展示用）
             "exposure": exp_val, "usage": use_val, "maintenance": maint_val, "social_impact": soc_val,
@@ -343,7 +349,7 @@ class BNFacilityEngine:
                           use_freq, user_group, use_intensity,
                           inspect_freq, repair_time,
                           dependency, outage_impact,
-                          facility_type, user_groups, facility_name=""):
+                          facility_type, user_groups, facility_name="", replaceable="可替换"):
         """三种维护情景对比"""
         scenarios = {
             "A":{"label":"现状被动维修","desc":"故障发生后才响应","inspect_freq":"每季","repair_time":">14天","cost":"低(短期)→高(长期)"},
@@ -356,7 +362,7 @@ class BNFacilityEngine:
                               use_freq,user_group,use_intensity,
                               sc["inspect_freq"],sc["repair_time"],
                               dependency,outage_impact,
-                              facility_type,user_groups,facility_name)
+                              facility_type,user_groups,facility_name,replaceable)
             results[key] = {**sc,"result":r}
         return results
 
@@ -375,6 +381,7 @@ class BNFacilityEngine:
             {"id":"use_intensity","layer":1,"label":"使用强度","states":USE_INTENSITY,"group":"usage"},
             {"id":"inspect_freq","layer":1,"label":"巡检频率","states":INSPECT_FREQ,"group":"maintenance"},
             {"id":"repair_time","layer":1,"label":"维修响应","states":REPAIR_TIME,"group":"maintenance"},
+            {"id":"replaceable","layer":1,"label":"是否可替换模块","states":REPLACEABLE,"group":"maintenance"},
             {"id":"dependency","layer":1,"label":"群体依赖度","states":DEPENDENCY,"group":"social"},
             {"id":"outage_impact","layer":1,"label":"停用后影响等级","states":OUTAGE_IMPACT,"group":"social"},
             # 第二层：4 个中间因子
@@ -393,6 +400,7 @@ class BNFacilityEngine:
             {"from":"use_freq","to":"usage"},{"from":"user_group","to":"usage"},
             {"from":"use_intensity","to":"usage"},
             {"from":"inspect_freq","to":"maintenance"},{"from":"repair_time","to":"maintenance"},
+            {"from":"replaceable","to":"maintenance"},
             {"from":"dependency","to":"social_impact"},{"from":"outage_impact","to":"social_impact"},
             {"from":"exposure","to":"failure_risk"},{"from":"usage","to":"failure_risk"},
             {"from":"maintenance","to":"failure_risk"},{"from":"social_impact","to":"failure_risk"},
@@ -442,8 +450,8 @@ class BNFacilityEngine:
             ("water_log", WATER_LOG), ("sun_shade", SUN_SHADE),
             ("use_freq", USE_FREQ), ("user_group", USER_GROUP),
             ("use_intensity", USE_INTENSITY), ("inspect_freq", INSPECT_FREQ),
-            ("repair_time", REPAIR_TIME), ("dependency", DEPENDENCY),
-            ("outage_impact", OUTAGE_IMPACT),
+            ("repair_time", REPAIR_TIME), ("replaceable", REPLACEABLE),
+            ("dependency", DEPENDENCY), ("outage_impact", OUTAGE_IMPACT),
         ]
         import numpy as np
         priors = {}
@@ -506,6 +514,7 @@ class BNFacilityEngine:
         "use_intensity":  {"states": USE_INTENSITY,  "label": "使用强度"},
         "inspect_freq":   {"states": INSPECT_FREQ,   "label": "巡检频率"},
         "repair_time":    {"states": REPAIR_TIME,    "label": "维修响应"},
+        "replaceable":    {"states": REPLACEABLE,    "label": "是否可替换模块"},
         "dependency":     {"states": DEPENDENCY,     "label": "群体依赖度"},
         "outage_impact":  {"states": OUTAGE_IMPACT,  "label": "停用影响等级"},
     }
@@ -552,8 +561,8 @@ class BNFacilityEngine:
             ("water_log", WATER_LOG), ("sun_shade", SUN_SHADE),
             ("use_freq", USE_FREQ), ("user_group", USER_GROUP),
             ("use_intensity", USE_INTENSITY), ("inspect_freq", INSPECT_FREQ),
-            ("repair_time", REPAIR_TIME), ("dependency", DEPENDENCY),
-            ("outage_impact", OUTAGE_IMPACT),
+            ("repair_time", REPAIR_TIME), ("replaceable", REPLACEABLE),
+            ("dependency", DEPENDENCY), ("outage_impact", OUTAGE_IMPACT),
         ]
         for var, states in leaf_vars:
             counts = {s: 1 for s in states}  # 拉普拉斯平滑（+1 避免零概率）
@@ -608,9 +617,9 @@ class BNFacilityEngine:
                  [USE_FREQ, USER_GROUP, USE_INTENSITY],
                  [3, 3, 3]),
                 ("maintenance", MAINTENANCE,
-                 ["inspect_freq","repair_time"],
-                 [INSPECT_FREQ, REPAIR_TIME],
-                 [3, 3]),
+                 ["replaceable","inspect_freq","repair_time"],
+                 [REPLACEABLE, INSPECT_FREQ, REPAIR_TIME],
+                 [2, 3, 3]),
                 ("social_impact", SOCIAL_IMPACT,
                  ["dependency","outage_impact"],
                  [DEPENDENCY, OUTAGE_IMPACT],
