@@ -453,11 +453,19 @@ async function showScenario() {
 // ===== URL 参数预填充（从排名页跳转过来） =====
 function loadFromURLParams() {
     const params = new URLSearchParams(window.location.search);
-    // 11 个观测字段
     const FIELD_KEYS = ['material','install_age','water_log','sun_shade',
         'use_freq','user_group','use_intensity','inspect_freq','repair_time',
         'dependency','outage_impact'];
     let hasParams = false;
+
+    // 1. 先设设施类型（触发 onTypeChange 填好默认值）
+    const ftype = params.get('facility_type');
+    if (ftype) {
+        const el = document.getElementById('facility_type');
+        if (el) { el.value = ftype; onTypeChange(); hasParams = true; }
+    }
+
+    // 2. 再用 URL 参数覆盖（onTypeChange 的默认值被实际值替换）
     FIELD_KEYS.forEach(key => {
         const val = params.get(key);
         if (val) {
@@ -465,16 +473,12 @@ function loadFromURLParams() {
             if (el) { el.value = val; hasParams = true; }
         }
     });
+
     // 设施名称
     const fname = params.get('facility_name');
     if (fname) { document.getElementById('facility_name').value = decodeURIComponent(fname); hasParams = true; }
-    // 设施类型
-    const ftype = params.get('facility_type');
-    if (ftype) {
-        const el = document.getElementById('facility_type');
-        if (el) { el.value = ftype; onTypeChange(); hasParams = true; }
-    }
-    // 使用群体
+
+    // 使用群体（URL 参数覆盖 onTypeChange 的默认勾选）
     const groups = params.get('user_groups');
     if (groups) {
         const groupList = groups.split(',');
@@ -483,7 +487,8 @@ function loadFromURLParams() {
         });
         hasParams = true;
     }
-    // 如果有参数就自动提交评估
+
+    // 有参数就自动提交评估
     if (hasParams) {
         saveFormToSession();
         document.getElementById('evaluate-form').dispatchEvent(new Event('submit'));
