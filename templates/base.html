@@ -23,6 +23,7 @@
             <a href="{{ url_for('history_page') }}" class="{% if request.path == '/history' %}active{% endif %}">历史记录</a>
             <a href="{{ url_for('tools_page') }}" class="{% if request.path == '/tools' %}active{% endif %}">工具</a>
             <a href="{{ url_for('calibrate_page') }}" class="{% if request.path == '/calibrate' %}active{% endif %}">模型校准</a>
+            <a href="{{ url_for('rotation_page') }}" class="{% if request.path == '/rotation' %}active{% endif %}">动态轮换</a>
             <a href="{{ url_for('admin_page') }}" class="{% if request.path.startswith('/admin') %}active{% endif %}">设置</a>
         </div>
     </nav>

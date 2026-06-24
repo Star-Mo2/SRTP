@@ -453,6 +453,49 @@ class BNFacilityEngine:
             priors[var] = {s: round(float(vals[i]), 4) for i, s in enumerate(states)}
         return priors
 
+    # ================================================================
+    #  轮换辅助：周边同类设施 → social 推断 + 健康度推断
+    # ================================================================
+
+    # 周边同类设施可取的值
+    SAME_TYPE_NEARBY = ["近(<50m)", "中(50-200m)", "远(>200m)"]
+    # 当前健康度可取的值
+    CURRENT_HEALTH = ["1-完好", "2-轻微磨损", "3-中等磨损", "4-严重磨损", "5-濒临报废"]
+
+    @staticmethod
+    def infer_social_from_nearby(nearby_value):
+        """
+        根据「周边同类设施」字段，自动推断 outage_impact 和 dependency。
+        不进 BN 结构——这是前置推断器，帮用户自动填两个叶子节点。
+
+        映射逻辑：
+          近(<50m)   → 坏了走两步就有替代 → 停用影响轻微，依赖度低/中
+          中(50-200m) → 有替代但要走一段     → 停用影响中等，依赖度中
+          远(>200m)   → 整个片区可能就这一个  → 停用影响严重，依赖度高
+        """
+        if nearby_value == "近(<50m)":
+            return {"outage_impact": "轻微", "dependency": "低"}
+        elif nearby_value == "中(50-200m)":
+            return {"outage_impact": "中等", "dependency": "中"}
+        elif nearby_value == "远(>200m)":
+            return {"outage_impact": "严重", "dependency": "高"}
+        return {"outage_impact": None, "dependency": None}
+
+    @staticmethod
+    def infer_health_from_age(install_age, material="木质"):
+        """
+        根据安装年限 + 材质，推断默认健康度（1-5）。
+        用户可在前端手动覆盖。
+
+        木质老化快 → 同一年限 +1 级
+        金属居中   → 直映射
+        塑料最慢   → 同一年限 −1 级（但有 UV 脆化风险，暴晒下需另判）
+        """
+        base = {"<3年": 1, "3-8年": 3, ">8年": 4}
+        adj = {"木质": 1, "金属": 0, "塑料": -1}
+        raw = base.get(install_age, 3) + adj.get(material, 0)
+        return max(1, min(5, raw))
+
     LABELS_MAP = {
         "material":       {"states": MATERIAL,       "label": "材料类型"},
         "install_age":    {"states": INSTALL_AGE,    "label": "安装年限"},

@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}动态轮换 - 适老化设施维护优先级评估系统{% endblock %}
+
+{% block content %}
+<h2 style="margin-bottom:8px;">🔄 同类型设施动态轮换</h2>
+<p style="font-size:13px;color:var(--text-secondary);margin-bottom:24px;">
+    基于贝叶斯网络评估各点位的退化压力，生成同类型设施在点位间的循环轮换方案，使设施均匀老化，延长集群整体使用寿命。
+</p>
+
+<!-- Step 1: 设施类型 + 导入 -->
+<div class="card">
+    <div class="card-header"><span class="card-icon">📋</span> 第1步：选择设施类型并导入数据</div>
+    <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;">
+        <div class="form-group" style="min-width:200px;">
+            <label class="form-label">设施类型</label>
+            <select id="rotation-facility-type" class="form-select" onchange="onTypeChange()">
+                <option value="">-- 请选择 --</option>
+                {% for t in facility_types %}
+                <option value="{{ t }}">{{ t }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="btn-group" style="display:flex;gap:8px;">
+            <label class="btn btn-primary" style="cursor:pointer;">
+                📂 导入 CSV / Excel
+                <input type="file" accept=".csv,.xlsx" style="display:none;" onchange="handleRotationImport(event)" id="rotation-file-input">
+            </label>
+            <button class="btn btn-secondary" onclick="addManualSite()">✏️ 手动添加点位</button>
+        </div>
+    </div>
+    <div id="import-status" style="margin-top:8px;font-size:12px;color:var(--text-secondary);"></div>
+</div>
+
+<!-- 类型选择弹窗 -->
+<div id="type-select-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+        <div class="modal-title">⚠️ 检测到多种设施类型</div>
+        <div class="modal-body" id="type-select-body"></div>
+        <div class="modal-actions" id="type-select-actions"></div>
+    </div>
+</div>
+
+<!-- Step 2: 点位列表 + 参数 -->
+<div class="card" id="sites-card" style="display:none;">
+    <div class="card-header"><span class="card-icon">📍</span> 第2步：核对点位数据</div>
+    <div id="sites-table-container" style="overflow-x:auto;margin-bottom:12px;">
+        <table class="ranking-table" id="sites-table">
+            <thead><tr>
+                <th>设施名称</th><th>材料</th><th>安装年限</th>
+                <th>积水</th><th>遮阴</th><th>使用频率</th>
+                <th>主要群体</th><th>使用强度</th>
+                <th>巡检</th><th>维修响应</th>
+                <th>依赖度</th><th>停用影响</th>
+                <th>周边同类设施</th><th>健康度(1-5)</th>
+                <th></th>
+            </tr></thead>
+            <tbody id="sites-tbody"></tbody>
+        </table>
+    </div>
+    <div class="form-group" style="max-width:300px;">
+        <label class="form-label">最短轮换间隔 T<sub>min</sub>（月）</label>
+        <input type="number" id="rotation-tmin" class="form-input" value="3" min="1" max="60" step="1">
+        <span style="font-size:11px;color:var(--text-muted);">至少多久才换一次（越小越灵活，但太频繁不现实）</span>
+    </div>
+    <button class="btn btn-primary btn-lg" onclick="generateRotationPlan()" id="generate-btn">
+        🔄 生成轮换方案
+    </button>
+</div>
+
+<!-- Step 3: 轮换方案结果 -->
+<div class="card" id="plan-card" style="display:none;">
+    <div class="card-header"><span class="card-icon">📊</span> 第3步：轮换方案</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:16px;">
+        <div id="plan-summary" style="font-size:14px;"></div>
+    </div>
+
+    <!-- 轮换路径图 -->
+    <div id="rotation-diagram" class="rotation-diagram" style="margin-bottom:20px;"></div>
+
+    <!-- 各段详情 -->
+    <div style="overflow-x:auto;margin-bottom:16px;">
+        <table class="ranking-table" id="plan-segments-table">
+            <thead><tr>
+                <th>段序</th><th>从（高压）</th><th>至（低压）</th>
+                <th>建议轮换间隔</th>
+                <th>说明</th>
+            </tr></thead>
+            <tbody id="plan-segments-tbody"></tbody>
+        </table>
+    </div>
+
+    <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary btn-sm" onclick="exportRotationCSV()">📥 导出方案 CSV</button>
+        <button class="btn btn-secondary btn-sm" onclick="window.print()">🖨️ 打印方案</button>
+    </div>
+</div>
+
+<!-- 底部说明 -->
+<div class="card" style="text-align:center;font-size:12px;color:var(--text-muted);">
+    💡 <strong>使用说明</strong>：轮换方案适用于可移动的同类型设施（如长椅、垃圾桶、可拆卸路牌等）。不可移动设施（如护栏、减速带）不适用。轮换间隔为建议值，实际执行请结合物业人力安排。
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/rotation.js') }}"></script>
+<script>
+// 从 URL 参数预填类型（首页跳转过来的）
+document.addEventListener('DOMContentLoaded', () => {
+    const params = new URLSearchParams(window.location.search);
+    const type = params.get('type');
+    if (type) {
+        document.getElementById('rotation-facility-type').value = type;
+    }
+});
+</script>
+{% endblock %}

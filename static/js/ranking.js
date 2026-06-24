@@ -289,6 +289,9 @@ async function runRanking() {
         document.getElementById('filter-bar').hidden = false;
         document.getElementById('ranking-empty').style.display = 'none';
         showToast(`评估完成！共 ${data.count} 个设施`);
+
+        // 检测是否有同类型设施 ≥2 个 → 提示轮换
+        checkRotationHint(data.results);
     } catch(err) { showToast('网络错误: '+err.message, 'error'); console.error(err); }
     finally { btn.disabled = false; btn.textContent = '🔍 开始评估排序'; }
 }
@@ -369,6 +372,43 @@ function updateFacilitySummary(idx, summaryId) {
     if (!f) return;
     const el = document.getElementById(summaryId);
     if (el) el.textContent = `${f.facility_type} | ${f.material} | ${f.install_age}`;
+}
+
+// ===== 同类型设施轮换提示 =====
+function checkRotationHint(results) {
+    // 按 facility_type 分组
+    const groups = {};
+    results.forEach(r => {
+        const ft = r.facility_type || '其他';
+        if (!groups[ft]) groups[ft] = [];
+        groups[ft].push(r.facility_name);
+    });
+
+    // 过滤出 ≥2 个同类型的组
+    const rotatable = Object.entries(groups).filter(([, names]) => names.length >= 2);
+    if (rotatable.length === 0) return;
+
+    // 排除不适合轮换的类型
+    const NON_ROTATABLE = ['护栏','减速带','无障碍坡道','盲道'];
+    const filtered = rotatable.filter(([ft]) => !NON_ROTATABLE.includes(ft));
+    if (filtered.length === 0) return;
+
+    // 构建提示消息
+    const items = filtered.map(([ft, names]) => `${names.length} 个「${ft}」`).join('、');
+
+    const hintBar = document.getElementById('rotation-hint');
+    if (hintBar) hintBar.remove();
+
+    const bar = document.createElement('div');
+    bar.id = 'rotation-hint';
+    bar.style.cssText = 'margin-top:16px;padding:14px 20px;background:var(--accent-light);border:1.5px solid var(--accent);border-radius:var(--radius);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;';
+    bar.innerHTML = `
+        <span style="font-size:14px;">🔄 检测到 ${items}，共 ${filtered.length} 类同类型设施可参与轮换。是否生成动态轮换方案？</span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            ${filtered.map(([ft]) => `<a href="/rotation?type=${encodeURIComponent(ft)}" class="btn btn-primary btn-sm" target="_blank">${ft} →</a>`).join('')}
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('rotation-hint').remove()">忽略</button>
+        </div>`;
+    document.getElementById('ranking-result-card').insertAdjacentElement('afterend', bar);
 }
 
 /** 列出字段的合法值，用于报错提示 */

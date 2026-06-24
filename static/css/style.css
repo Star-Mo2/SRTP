@@ -457,3 +457,36 @@ a:hover { color: var(--accent-hover); }
     color: #4A6E3A; padding: 12px 16px; border-radius: var(--radius-sm);
     font-size: 13px;
 }
+
+/* ===== 动态轮换页 ===== */
+.rotation-diagram {
+    background: var(--bg-secondary);
+    border-radius: var(--radius);
+    padding: 16px;
+    overflow-x: auto;
+    min-height: 80px;
+}
+
+.rotation-node {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 80px; height: 80px; border-radius: 50%;
+    color: #FFF; font-weight: 700; font-size: 13px;
+    box-shadow: var(--shadow);
+    flex-shrink: 0;
+}
+
+.rotation-arrow {
+    display: flex; flex-direction: column; align-items: center;
+    flex-shrink: 0; margin: 0 8px;
+}
+
+.rotation-arrow-label {
+    font-size: 11px; font-weight: 600;
+    color: var(--accent); white-space: nowrap;
+}
+
+.rotation-arrow-icon {
+    font-size: 20px; color: var(--accent);
+}
+
+.btn-group { display: flex; gap: 8px; flex-wrap: wrap; }

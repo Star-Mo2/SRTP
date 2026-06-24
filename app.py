@@ -12,6 +12,7 @@ from database import (save_evaluation, get_all_evaluations, get_evaluation,
 from llm_client import (get_system_prompt, save_system_prompt,
                         call_llm, test_llm_connection, get_admin_password,
                         get_knowledge_base, save_knowledge_base)
+from rotation import generate_rotation_plan
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "srtp-bn-facility-2026")
@@ -93,6 +94,11 @@ def tools_page():
 def calibrate_page():
     """模型校准页面"""
     return render_template("calibrate.html")
+
+@app.route("/rotation")
+def rotation_page():
+    """动态轮换建议页面"""
+    return render_template("rotation.html", facility_types=FACILITY_TYPES)
 
 @app.route("/admin/login")
 def admin_login_page():
@@ -322,8 +328,12 @@ COLUMN_MAP = {
     "维修响应":"repair_time","维修响应时间":"repair_time","响应时间":"repair_time","维修":"repair_time",
     "群体依赖度":"dependency","群体依赖":"dependency","依赖程度":"dependency","依赖":"dependency",
     "无障碍设施":"outage_impact","无障碍":"outage_impact",
+    # 停用后影响等级
     "停用后影响":"outage_impact","停用影响":"outage_impact","影响等级":"outage_impact",
     "停用后影响等级":"outage_impact","停用影响等级":"outage_impact",
+    # 轮换专用
+    "周边同类设施":"same_type_nearby","同类设施距离":"same_type_nearby","替代设施距离":"same_type_nearby",
+    "当前健康度":"current_health","健康度":"current_health","当前磨损":"current_health",
     "设施名称":"facility_name","名称":"facility_name",
     "设施类型":"facility_type","类型":"facility_type",
     # 校准中间因子（第2层）——新名对齐申请表，旧名保留兼容
@@ -433,6 +443,209 @@ def api_engine_reset():
     """重置模型为默认参数"""
     rebuild_engine()
     return jsonify({"success": True, "message": "模型已重置为默认参数"})
+
+
+# ================================================================
+#  动态轮换 API
+# ================================================================
+
+@app.route("/api/rotation/plan", methods=["POST"])
+def api_rotation_plan():
+    """
+    接收同类型设施列表 → 每个跑 BN 拿 exposure/usage →
+    轮换算法生成方案。
+    """
+    try:
+        data = request.get_json()
+        sites = data.get("sites", [])
+        T_min = int(data.get("T_min", 3))
+
+        if not sites or len(sites) < 2:
+            return jsonify({"success": False, "error": "至少需要 2 个同类型设施"}), 400
+
+        engine = get_engine()
+        enriched = []
+        for s in sites:
+            # 如果填了 same_type_nearby 且没手动填 social 字段，则自动推断
+            nearby = s.get("same_type_nearby", "")
+            if nearby:
+                infer = BNFacilityEngine.infer_social_from_nearby(nearby)
+                if not s.get("outage_impact"):
+                    s["outage_impact"] = infer.get("outage_impact", "中等")
+                if not s.get("dependency"):
+                    s["dependency"] = infer.get("dependency", "中")
+
+            # 如果没填 health，则从 install_age + material 推断
+            if not s.get("current_health"):
+                s["current_health"] = BNFacilityEngine.infer_health_from_age(
+                    s.get("install_age", "3-8年"),
+                    s.get("material", "金属"),
+                )
+
+            # 跑 BN
+            r = engine.evaluate(
+                material=s.get("material", "金属"),
+                install_age=s.get("install_age", "3-8年"),
+                water_log=s.get("water_log", "中"),
+                sun_shade=s.get("sun_shade", "有遮"),
+                use_freq=s.get("use_freq", "中"),
+                user_group=s.get("user_group", "成人"),
+                use_intensity=s.get("use_intensity", "静坐"),
+                inspect_freq=s.get("inspect_freq", "每月"),
+                repair_time=s.get("repair_time", "3-14天"),
+                dependency=s.get("dependency", "中"),
+                outage_impact=s.get("outage_impact", "中等"),
+                facility_type=s.get("facility_type", "长椅"),
+                user_groups=s.get("user_groups", ["老人"]),
+                facility_name=s.get("facility_name", ""),
+            )
+            enriched.append({
+                "facility_name": s.get("facility_name", ""),
+                "facility_type": s.get("facility_type", "长椅"),
+                "material": s.get("material", "金属"),
+                "install_age": s.get("install_age", "3-8年"),
+                "sun_shade": s.get("sun_shade", "有遮"),
+                "water_log": s.get("water_log", "中"),
+                "use_freq": s.get("use_freq", "中"),
+                "user_group": s.get("user_group", "成人"),
+                "use_intensity": s.get("use_intensity", "静坐"),
+                "exposure": r["exposure"],
+                "usage": r["usage"],
+                "same_type_nearby": s.get("same_type_nearby", ""),
+                "current_health": int(s.get("current_health", 3)),
+                "_bn_result": r,
+            })
+
+        plan = generate_rotation_plan(enriched, T_min)
+
+        if not plan.get("success"):
+            return jsonify(plan), 400
+
+        return jsonify({
+            "success": True,
+            "plan": plan,
+            "sites": enriched,
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+@app.route("/api/rotation/import", methods=["POST"])
+def api_rotation_import():
+    """
+    轮换专用导入：解析 CSV/XLSX → 检测设施类型 →
+    如果含多种类型 → 返回类型列表让用户选 →
+    用户选完后回传，只导入选定类型。
+    """
+    try:
+        file = request.files.get("file")
+        if not file:
+            return jsonify({"success": False, "error": "未收到文件"}), 400
+
+        result = parse_upload(file)
+        rows = result["rows"]
+        if not rows:
+            return jsonify({"success": False, "error": "文件中没有有效数据"}), 400
+
+        # 检测设施类型
+        type_set = set()
+        for r in rows:
+            ft = r.get("facility_type", "").strip()
+            if ft:
+                type_set.add(ft)
+
+        if len(type_set) == 0:
+            return jsonify({"success": False, "error": "文件中未检测到「设施类型」列"}), 400
+
+        # 检查无效值（轮换字段合法值）
+        VALID_NEARBY = ["近(<50m)", "中(50-200m)", "远(>200m)"]
+        HEALTH_RANGE = ["1", "2", "3", "4", "5"]
+        invalid_rows = []
+        for i, r in enumerate(rows):
+            issues = []
+            nb = r.get("same_type_nearby", "").strip()
+            if nb and nb not in VALID_NEARBY:
+                issues.append(f"周边同类设施值「{nb}」无效")
+            hl = r.get("current_health", "").strip()
+            if hl and hl not in HEALTH_RANGE:
+                issues.append(f"当前健康度值「{hl}」无效（应填 1-5）")
+            if issues:
+                invalid_rows.append({"index": i + 2, "issues": issues, "name": r.get("facility_name", "")})
+
+        return jsonify({
+            "success": True,
+            "types": sorted(list(type_set)),
+            "multi_type": len(type_set) > 1,
+            "count": len(rows),
+            "rows": rows,
+            "invalid_rows": invalid_rows,
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@app.route("/api/rotation/import-filtered", methods=["POST"])
+def api_rotation_import_filtered():
+    """
+    用户在类型选择后，回传选定的类型 → 只返回该类型的行。
+    同时做无效值标记（⚠️ 前缀）。
+    """
+    try:
+        data = request.get_json()
+        rows = data.get("rows", [])
+        selected_type = data.get("selected_type", "").strip()
+
+        if not selected_type:
+            return jsonify({"success": False, "error": "未选择设施类型"}), 400
+
+        VALID_NEARBY = ["近(<50m)", "中(50-200m)", "远(>200m)"]
+        HEALTH_RANGE = ["1", "2", "3", "4", "5"]
+
+        filtered = []
+        warnings = []
+        for i, r in enumerate(rows):
+            ft = r.get("facility_type", "").strip()
+            if ft != selected_type:
+                continue
+
+            # 无效值标记
+            nb = r.get("same_type_nearby", "").strip()
+            hl = r.get("current_health", "").strip()
+            flags = []
+            if nb and nb not in VALID_NEARBY:
+                flags.append(f"⚠️ 周边同类设施「{nb}」无效")
+            if hl and hl not in HEALTH_RANGE:
+                flags.append(f"⚠️ 当前健康度「{hl}」无效（应填 1-5 整数）")
+            if flags:
+                warnings.append({"index": i + 2, "name": r.get("facility_name", ""), "flags": flags})
+
+            # 推断缺失的 social 字段
+            if nb and nb in VALID_NEARBY:
+                infer = BNFacilityEngine.infer_social_from_nearby(nb)
+                if not r.get("outage_impact", "").strip():
+                    r["outage_impact"] = infer.get("outage_impact", "")
+                if not r.get("dependency", "").strip():
+                    r["dependency"] = infer.get("dependency", "")
+
+            # 推断缺失的 health
+            if not hl:
+                r["current_health"] = str(BNFacilityEngine.infer_health_from_age(
+                    r.get("install_age", "3-8年"),
+                    r.get("material", "金属"),
+                ))
+
+            filtered.append(r)
+
+        return jsonify({
+            "success": True,
+            "selected_type": selected_type,
+            "count": len(filtered),
+            "rows": filtered,
+            "warnings": warnings,
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 400
 
 
 # ================================================================
