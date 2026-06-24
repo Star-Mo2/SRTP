@@ -509,8 +509,11 @@ def api_rotation_plan():
                 "use_freq": s.get("use_freq", "中"),
                 "user_group": s.get("user_group", "成人"),
                 "use_intensity": s.get("use_intensity", "静坐"),
+                # v1.1: 传递连续概率分布，而非离散标签
                 "exposure": r["exposure"],
+                "exposure_probs": r["mid_probs"]["exposure_prob"],
                 "usage": r["usage"],
+                "usage_probs": r["mid_probs"]["usage_prob"],
                 "same_type_nearby": s.get("same_type_nearby", ""),
                 "current_health": int(s.get("current_health", 3)),
                 "_bn_result": r,

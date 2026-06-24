@@ -1,55 +1,67 @@
 """
 ============================================================
- 动态轮换引擎 v1.0
- 基于 BN 的 exposure + usage 因子，生成同类型设施循环轮换方案
- 不修改 BN 结构——仅复用现有推理结果
+ 动态轮换引擎 v1.1
+ 基于 BN 的 exposure + usage 连续概率分布，生成同类型设施循环轮换方案
+ v1.1: 用概率期望替代离散标签 → 解决同分排序失效问题
 ============================================================
 """
 
 # 材质退化系数（基于 材料曲线/ 文献数据）
-# 数值含义：该材质在单位时间内消耗有效寿命的速率（相对值）
 MATERIAL_WEAR_FACTOR = {
-    "木质": 1.5,   # 最快（UV + 水协同）
-    "金属": 1.0,   # 基准
-    "塑料": 1.2,   # UV 脆化（无稳定剂更差，此处取商业级含炭黑）
+    "木质": 1.5,
+    "金属": 1.0,
+    "塑料": 1.2,
 }
 
-# 曝光等级 → 年退化速率基数（基于文献的经验值）
-EXPOSURE_RATE = {
-    "低暴露": 0.03,   # 有遮+干燥 → 极慢
-    "中暴露": 0.08,   # 中等
-    "高暴露": 0.15,   # 暴晒+潮湿 → 快
-}
+# 曝光退化速率范围（经验值，对应低暴露→高暴露）
+EXPOSURE_RATE_MIN = 0.03   # 低暴露
+EXPOSURE_RATE_MAX = 0.15   # 高暴露
 
-# 使用负荷 → 消耗加速因子
-USAGE_LOAD_FACTOR = {
-    "低负荷": 0.7,
-    "中负荷": 1.0,
-    "高负荷": 1.5,
-}
+# 使用负荷加速因子范围
+USAGE_FACTOR_MIN = 0.7     # 低负荷
+USAGE_FACTOR_MAX = 1.5     # 高负荷
 
-# 健康度 → 剩余寿命估算（年），假设总设计寿命约 10 年
+# 健康度 → 剩余寿命估算（年）
 HEALTH_REMAINING_YEARS = {
-    1: 9.0,    # 完好
-    2: 7.0,    # 轻微磨损
-    3: 5.0,    # 中等磨损
-    4: 2.5,    # 严重磨损
-    5: 0.5,    # 濒临报废
+    1: 9.0, 2: 7.0, 3: 5.0, 4: 2.5, 5: 0.5,
 }
 
 
-def _degradation_pressure(exposure_label, usage_label, material):
+def _deg_pressure_from_probs(exposure_probs, usage_probs, material):
     """
-    计算单个点位的年退化压力（消耗速率）。
-    数值越高 → 设施在这个点位老得越快 → 应该优先把新设施放这，
-    把旧设施挪走休养。
+    从 BN 中间因子的连续概率分布计算退化压力。
+    不再使用离散标签（argmax），而是用概率加权期望值，
+    保证即使输入差异微小，输出也会有所区分。
 
-    退化压力 = 材质系数 × exposure 退化速率 × usage 加速因子
+    exposure_score: 0(全低) ~ 1(全高)，连续值
+    usage_score:    0(全低) ~ 1(全高)，连续值
     """
+    # exposure 概率期望（低暴露→0, 中暴露→0.5, 高暴露→1）
+    exp_score = (
+        0.0 * exposure_probs.get("低暴露", 0.33) +
+        0.5 * exposure_probs.get("中暴露", 0.33) +
+        1.0 * exposure_probs.get("高暴露", 0.33)
+    )
+    # usage 概率期望
+    use_score = (
+        0.0 * usage_probs.get("低负荷", 0.33) +
+        0.5 * usage_probs.get("中负荷", 0.33) +
+        1.0 * usage_probs.get("高负荷", 0.33)
+    )
+    # 材质系数
     mat = MATERIAL_WEAR_FACTOR.get(material, 1.0)
-    exp_rate = EXPOSURE_RATE.get(exposure_label, 0.08)
-    use_factor = USAGE_LOAD_FACTOR.get(usage_label, 1.0)
-    return round(mat * exp_rate * use_factor, 4)
+    # 插值到实际退化速率范围
+    exp_rate = EXPOSURE_RATE_MIN + exp_score * (EXPOSURE_RATE_MAX - EXPOSURE_RATE_MIN)
+    use_factor = USAGE_FACTOR_MIN + use_score * (USAGE_FACTOR_MAX - USAGE_FACTOR_MIN)
+
+    pressure = round(mat * exp_rate * use_factor, 5)
+    return {
+        "pressure": pressure,
+        "exp_score": round(exp_score, 4),
+        "use_score": round(use_score, 4),
+        "exp_rate": round(exp_rate, 5),
+        "use_factor": round(use_factor, 4),
+    }
 
 
 def _site_remaining_years(health, pressure):
@@ -68,41 +80,30 @@ def generate_rotation_plan(sites, T_min=3):
     核心算法：生成同类型设施的循环轮换方案。
 
     参数:
-      sites: [{facility_name, material, exposure, usage, current_health, same_type_nearby}]
+      sites: [{facility_name, material, exposure_probs, usage_probs, current_health, same_type_nearby}]
       T_min: 最短可接受轮换间隔（月），用户设定，默认 3
 
     返回:
       {
-        cycle: ["A","B","C","D"],       # 轮换顺序（沿退化压力降序）
-        segments: [                       # 每段详情
-          {from:"A", to:"B", interval_months:8, reason:"..."},
-          ...
-        ],
-        lifespan_gain_pct: 28.5,          # 预计寿命延长
-        explanation: "...",               # 可读解释
+        cycle: ["A","B","C","D"],
+        segments: [{from, to, interval_months, reason}],
+        lifespan_gain_pct: 28.5,
+        explanation: "...",
       }
-
-    算法逻辑：
-      1. 计算每个点位的退化压力
-      2. 按压力降序排列 → 形成循环路径（高压 → 低压 → 高压）
-         - 设施沿压力递减方向流动：新设施去高压点，旧设施来低压点休养
-      3. 每段轮换间隔 = max(T_min, 两个点位预期寿命差 / 2)
-         - 预期寿命 = 当前健康度映射的剩余年数 / 该点位退化压力
-      4. 寿命延长 = (轮换后集群均匀老化寿命 − 不轮换寿命) / 不轮换寿命
     """
     if len(sites) < 2:
-        return {
-            "success": False,
-            "error": "至少需要 2 个同类型设施才能生成轮换方案",
-        }
+        return {"success": False, "error": "至少需要 2 个同类型设施才能生成轮换方案"}
 
-    # ---- Step 1: 计算退化压力 ----
+    # ---- Step 1: 计算退化压力（使用连续概率）----
     for s in sites:
-        s["_pressure"] = _degradation_pressure(
-            s.get("exposure", "中暴露"),
-            s.get("usage", "中负荷"),
-            s.get("material", "金属"),
-        )
+        exp_probs = s.get("exposure_probs", {"低暴露": 0.33, "中暴露": 0.33, "高暴露": 0.33})
+        use_probs = s.get("usage_probs", {"低负荷": 0.33, "中负荷": 0.33, "高负荷": 0.33})
+        result = _deg_pressure_from_probs(exp_probs, use_probs, s.get("material", "金属"))
+        s["_pressure"] = result["pressure"]
+        s["_exp_score"] = result["exp_score"]
+        s["_use_score"] = result["use_score"]
+        s["_exp_rate"] = result["exp_rate"]
+        s["_use_factor"] = result["use_factor"]
         s["_health"] = int(s.get("current_health", 3))
         s["_remaining"] = _site_remaining_years(s["_health"], s["_pressure"])
 
@@ -114,24 +115,24 @@ def generate_rotation_plan(sites, T_min=3):
     segments = []
     for i in range(n):
         from_site = sorted_sites[i]
-        to_site = sorted_sites[(i + 1) % n]  # 循环：最后一个回到第一个
+        to_site = sorted_sites[(i + 1) % n]
 
-        # 轮换间隔：取 T_min 和 理论最优（两点寿命中值）的最大值
         theoretical = round(
             (from_site["_remaining"] + to_site["_remaining"]) / 4, 1
         )
         interval_months = max(T_min, theoretical)
 
-        pressure_diff = round(from_site["_pressure"] - to_site["_pressure"], 4)
-        if pressure_diff > 0.01:
+        pressure_diff = round(from_site["_pressure"] - to_site["_pressure"], 5)
+        if pressure_diff > 0.001:
             reason = (
-                f"「{from_site['facility_name']}」退化压力({from_site['_pressure']:.3f}) "
-                f"高于「{to_site['facility_name']}」({to_site['_pressure']:.3f})，"
-                f"建议每 {interval_months:.0f} 个月将设施从高压点位移至低压点位"
+                f"「{from_site['facility_name']}」退化压力({from_site['_pressure']:.4f}) "
+                f"高于「{to_site['facility_name']}」({to_site['_pressure']:.4f})，"
+                f"每 {interval_months:.0f} 个月将设施轮换至低压点位，减缓磨损积累"
             )
         else:
             reason = (
-                f"两点退化压力相近，按 T_min={T_min} 个月轮换以均匀磨损"
+                f"两点退化压力接近(差仅{abs(pressure_diff):.4f})，"
+                f"按 T_min={T_min} 个月轮换以均匀磨损"
             )
 
         segments.append({
@@ -139,6 +140,10 @@ def generate_rotation_plan(sites, T_min=3):
             "to": to_site["facility_name"],
             "from_pressure": from_site["_pressure"],
             "to_pressure": to_site["_pressure"],
+            "from_exp_score": from_site["_exp_score"],
+            "from_use_score": from_site["_use_score"],
+            "to_exp_score": to_site["_exp_score"],
+            "to_use_score": to_site["_use_score"],
             "from_health": from_site["_health"],
             "to_health": to_site["_health"],
             "interval_months": round(interval_months, 1),

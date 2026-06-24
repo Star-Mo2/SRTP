@@ -267,17 +267,19 @@ function renderPlan(plan) {
     // SVG 路径图
     renderRotationDiagram(plan);
 
-    // 各段详情表
+    // 各段详情表（含压力分解）
     const segTbody = document.getElementById('plan-segments-tbody');
-    segTbody.innerHTML = plan.segments.map((seg, i) => `
-        <tr>
+    segTbody.innerHTML = plan.segments.map((seg, i) => {
+        const fromDetail = `退化压力:${seg.from_pressure?.toFixed(4)||'—'} | exp:${(seg.from_exp_score*100).toFixed(1)}% | use:${(seg.from_use_score*100).toFixed(1)}% | 健康:${seg.from_health}`;
+        const toDetail = `退化压力:${seg.to_pressure?.toFixed(4)||'—'} | exp:${(seg.to_exp_score*100).toFixed(1)}% | use:${(seg.to_use_score*100).toFixed(1)}% | 健康:${seg.to_health}`;
+        return `<tr>
             <td><strong>#${i+1}</strong></td>
-            <td>📍 ${escapeHtml(seg.from)}<br><span style="font-size:11px;color:var(--text-muted);">压力:${seg.from_pressure} | 健康度:${seg.from_health}</span></td>
-            <td>📍 ${escapeHtml(seg.to)}<br><span style="font-size:11px;color:var(--text-muted);">压力:${seg.to_pressure} | 健康度:${seg.to_health}</span></td>
+            <td>📍 ${escapeHtml(seg.from)}<br><span style="font-size:10px;color:var(--text-muted);">${fromDetail}</span></td>
+            <td>📍 ${escapeHtml(seg.to)}<br><span style="font-size:10px;color:var(--text-muted);">${toDetail}</span></td>
             <td><strong style="font-size:16px;color:var(--accent);">${seg.interval_months} 个月</strong></td>
             <td style="font-size:12px;max-width:300px;">${seg.reason}</td>
-        </tr>
-    `).join('');
+        </tr>`;
+    }).join('');
 }
 
 // ===== SVG 轮换路径图 =====
