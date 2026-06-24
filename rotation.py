@@ -1,8 +1,9 @@
 """
 ============================================================
- 动态轮换引擎 v1.1
+ 动态轮换引擎 v1.2
  基于 BN 的 exposure + usage 连续概率分布，生成同类型设施循环轮换方案
  v1.1: 用概率期望替代离散标签 → 解决同分排序失效问题
+ v1.2: 压力相近的点位自动跳过 → 避免无效轮换浪费人力
 ============================================================
 """
 
@@ -20,6 +21,9 @@ EXPOSURE_RATE_MAX = 0.15   # 高暴露
 # 使用负荷加速因子范围
 USAGE_FACTOR_MIN = 0.7     # 低负荷
 USAGE_FACTOR_MAX = 1.5     # 高负荷
+
+# 退化压力相似度阈值：两个点位压力相对差 < 15% 视为可跳过轮换
+PRESSURE_DIFF_THRESHOLD = 0.15
 
 # 健康度 → 剩余寿命估算（年）
 HEALTH_REMAINING_YEARS = {
@@ -109,54 +113,94 @@ def generate_rotation_plan(sites, T_min=3):
 
     # ---- Step 2: 按退化压力降序排列 ----
     sorted_sites = sorted(sites, key=lambda s: s["_pressure"], reverse=True)
-
-    # ---- Step 3: 计算轮换路径 ----
     n = len(sorted_sites)
+    max_p = sorted_sites[0]["_pressure"]
+    min_p = sorted_sites[-1]["_pressure"]
+
+    # ---- Step 2.1: 全局检查 —— 全是同级点位则无需轮换（方案 C）----
+    if max_p > 0 and (max_p - min_p) / max_p < PRESSURE_DIFF_THRESHOLD:
+        names = "、".join(s["facility_name"] for s in sorted_sites)
+        return {
+            "success": True,
+            "all_similar": True,
+            "message": (
+                f"所有 {n} 个点位退化压力接近（最高 {max_p:.4f}，最低 {min_p:.4f}，"
+                f"差异仅 {round((max_p-min_p)/max_p*100,1)}% < {round(PRESSURE_DIFF_THRESHOLD*100)}%），"
+                f"无需轮换。建议对所有点位定期巡检即可。"
+            ),
+            "cycle": [],
+            "segments": [],
+            "lifespan_gain_pct": 0.0,
+            "avg_pressure": round(sum(s["_pressure"] for s in sorted_sites) / n, 4),
+            "avg_remaining_no_rotation": round(min(s["_remaining"] for s in sorted_sites), 1),
+            "avg_remaining_with_rotation": 0.0,
+            "explanation": f"「{names}」退化压力处于同一水平，轮换不会产生明显收益，反而增加搬运成本。",
+            "T_min": T_min,
+        }
+
+    # ---- Step 3: 计算轮换路径（方案 A：相近点位自动跳过）----
     segments = []
+    skip_count = 0
     for i in range(n):
         from_site = sorted_sites[i]
         to_site = sorted_sites[(i + 1) % n]
 
-        theoretical = round(
-            (from_site["_remaining"] + to_site["_remaining"]) / 4, 1
-        )
-        interval_months = max(T_min, theoretical)
+        # 计算相对压力差（用绝对值 + max 防止循环末尾低压→高压时符号逆转）
+        denom = max(from_site["_pressure"], to_site["_pressure"], 0.0001)
+        rel_diff = abs(from_site["_pressure"] - to_site["_pressure"]) / denom
 
-        pressure_diff = round(from_site["_pressure"] - to_site["_pressure"], 5)
-        if pressure_diff > 0.001:
-            reason = (
-                f"「{from_site['facility_name']}」退化压力({from_site['_pressure']:.4f}) "
-                f"高于「{to_site['facility_name']}」({to_site['_pressure']:.4f})，"
-                f"每 {interval_months:.0f} 个月将设施轮换至低压点位，减缓磨损积累"
-            )
+        if rel_diff < PRESSURE_DIFF_THRESHOLD:
+            # 压力相近 → 跳过此段，不安排轮换
+            skip_count += 1
+            segments.append({
+                "from": from_site["facility_name"],
+                "to": to_site["facility_name"],
+                "from_pressure": from_site["_pressure"],
+                "to_pressure": to_site["_pressure"],
+                "from_exp_score": from_site["_exp_score"],
+                "from_use_score": from_site["_use_score"],
+                "to_exp_score": to_site["_exp_score"],
+                "to_use_score": to_site["_use_score"],
+                "from_health": from_site["_health"],
+                "to_health": to_site["_health"],
+                "interval_months": None,  # 跳过，不建议轮换
+                "skip": True,
+                "reason": (
+                    f"「{from_site['facility_name']}」与「{to_site['facility_name']}」"
+                    f"退化压力接近（差仅 {round(rel_diff*100,1)}% < {round(PRESSURE_DIFF_THRESHOLD*100)}%），"
+                    f"建议跳过，无需在此两点位间轮换"
+                ),
+            })
         else:
-            reason = (
-                f"两点退化压力接近(差仅{abs(pressure_diff):.4f})，"
-                f"按 T_min={T_min} 个月轮换以均匀磨损"
+            # 压力差异显著 → 安排轮换
+            theoretical = round(
+                (from_site["_remaining"] + to_site["_remaining"]) / 4, 1
             )
+            interval_months = max(T_min, theoretical)
 
-        segments.append({
-            "from": from_site["facility_name"],
-            "to": to_site["facility_name"],
-            "from_pressure": from_site["_pressure"],
-            "to_pressure": to_site["_pressure"],
-            "from_exp_score": from_site["_exp_score"],
-            "from_use_score": from_site["_use_score"],
-            "to_exp_score": to_site["_exp_score"],
-            "to_use_score": to_site["_use_score"],
-            "from_health": from_site["_health"],
-            "to_health": to_site["_health"],
-            "interval_months": round(interval_months, 1),
-            "reason": reason,
-        })
+            segments.append({
+                "from": from_site["facility_name"],
+                "to": to_site["facility_name"],
+                "from_pressure": from_site["_pressure"],
+                "to_pressure": to_site["_pressure"],
+                "from_exp_score": from_site["_exp_score"],
+                "from_use_score": from_site["_use_score"],
+                "to_exp_score": to_site["_exp_score"],
+                "to_use_score": to_site["_use_score"],
+                "from_health": from_site["_health"],
+                "to_health": to_site["_health"],
+                "interval_months": round(interval_months, 1),
+                "skip": False,
+                "reason": (
+                    f"「{from_site['facility_name']}」退化压力({from_site['_pressure']:.4f}) "
+                    f"显著高于「{to_site['facility_name']}」({to_site['_pressure']:.4f})，"
+                    f"建议每 {interval_months:.0f} 个月轮换一次"
+                ),
+            })
 
     # ---- Step 4: 寿命延长估算 ----
-    # 不轮换：第一个设施在自己点位撑到报废的时间（触发首次更换）
     no_rotation_lifespan = min(s["_remaining"] for s in sorted_sites)
-
-    # 轮换后：所有设施均匀分担退化压力，同时耗尽
     avg_pressure = sum(s["_pressure"] for s in sorted_sites) / n
-    # 每个设施在平均压力下的剩余寿命
     rotation_individual = [
         _site_remaining_years(s["_health"], avg_pressure)
         for s in sorted_sites
@@ -183,9 +227,12 @@ def generate_rotation_plan(sites, T_min=3):
     else:
         gain_desc = "注意：当前存在一个或多个严重磨损设施，建议先更换后再启动轮换计划"
 
+    skip_desc = f"其中 {skip_count} 段因压力相近(差<{round(PRESSURE_DIFF_THRESHOLD*100)}%)建议跳过不轮换" if skip_count > 0 else ""
+
     explanation = (
-        f"共 {n} 个同类型设施参与轮换。"
+        f"共 {n} 个同类型设施参与评估。"
         f"轮换路径按退化压力降序排列：{' → '.join(cycle_names)} → {cycle_names[0]}。"
+        f"{skip_desc}。"
         f"{gain_desc}。"
         f"最短轮换间隔设为 {T_min} 个月。"
     )

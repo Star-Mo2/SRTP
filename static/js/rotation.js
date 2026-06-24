@@ -257,6 +257,18 @@ async function generateRotationPlan() {
 
 // ===== 渲染轮换方案 =====
 function renderPlan(plan) {
+    // 全部压力相近的特殊情况（方案 C）
+    if (plan.all_similar) {
+        document.getElementById('plan-summary').innerHTML = `
+            <div style="text-align:center;padding:20px;">
+                <div style="font-size:48px;margin-bottom:12px;">✅</div>
+                <div style="font-size:16px;font-weight:600;color:var(--success);">${plan.message}</div>
+            </div>`;
+        document.getElementById('rotation-diagram').innerHTML = '';
+        document.getElementById('plan-segments-tbody').innerHTML = '';
+        return;
+    }
+
     // 摘要
     const gainColor = plan.lifespan_gain_pct > 5 ? 'var(--success)' : (plan.lifespan_gain_pct > 0 ? 'var(--warning)' : 'var(--text-secondary)');
     document.getElementById('plan-summary').innerHTML = `
@@ -267,11 +279,20 @@ function renderPlan(plan) {
     // SVG 路径图
     renderRotationDiagram(plan);
 
-    // 各段详情表（含压力分解）
+    // 各段详情表（含压力分解 + 跳过标记）
     const segTbody = document.getElementById('plan-segments-tbody');
     segTbody.innerHTML = plan.segments.map((seg, i) => {
         const fromDetail = `退化压力:${seg.from_pressure?.toFixed(4)||'—'} | exp:${(seg.from_exp_score*100).toFixed(1)}% | use:${(seg.from_use_score*100).toFixed(1)}% | 健康:${seg.from_health}`;
         const toDetail = `退化压力:${seg.to_pressure?.toFixed(4)||'—'} | exp:${(seg.to_exp_score*100).toFixed(1)}% | use:${(seg.to_use_score*100).toFixed(1)}% | 健康:${seg.to_health}`;
+        if (seg.skip) {
+            return `<tr style="opacity:0.45;background:var(--bg-secondary);">
+                <td><strong>#${i+1}</strong></td>
+                <td>📍 ${escapeHtml(seg.from)}</td>
+                <td>📍 ${escapeHtml(seg.to)}</td>
+                <td><span style="font-size:13px;color:var(--text-muted);text-decoration:line-through;">— ⚠️ 跳过</span></td>
+                <td style="font-size:11px;max-width:300px;color:var(--text-muted);">${seg.reason}</td>
+            </tr>`;
+        }
         return `<tr>
             <td><strong>#${i+1}</strong></td>
             <td>📍 ${escapeHtml(seg.from)}<br><span style="font-size:10px;color:var(--text-muted);">${fromDetail}</span></td>
@@ -307,12 +328,19 @@ function renderRotationDiagram(plan) {
             ${i < n ? `<div style="font-size:10px;color:var(--text-muted);">健康度 ${plan.segments[i]?.from_health||'—'}</div>` : ''}
         </div>`;
 
-        // 箭头 + 间隔标注
+        // 箭头 + 间隔标注（或跳过）
         if (!isLast) {
-            html += `<div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;margin:0 4px;">
-                <div style="font-size:11px;font-weight:600;color:var(--accent);white-space:nowrap;">${seg.interval_months}个月 →</div>
-                <div style="font-size:20px;color:var(--accent);">→</div>
-            </div>`;
+            if (seg.skip) {
+                html += `<div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;margin:0 4px;opacity:0.4;">
+                    <div style="font-size:10px;font-weight:600;color:var(--text-muted);white-space:nowrap;text-decoration:line-through;">跳过</div>
+                    <div style="font-size:20px;color:var(--text-muted);">→</div>
+                </div>`;
+            } else {
+                html += `<div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;margin:0 4px;">
+                    <div style="font-size:11px;font-weight:600;color:var(--accent);white-space:nowrap;">${seg.interval_months}个月 →</div>
+                    <div style="font-size:20px;color:var(--accent);">→</div>
+                </div>`;
+            }
         }
     }
 
