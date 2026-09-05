@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>深田社区设施点位 · 现场记录</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  html,body{margin:0;height:100%;font-family:"Microsoft YaHei",system-ui,sans-serif;}
+  #map{position:absolute;inset:0;background:#eef;}
+  .panel{background:rgba(255,255,255,.95);padding:9px 11px;border-radius:8px;line-height:1.7;font:13px/1.6 sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.3);}
+  .panel b{display:block;margin-bottom:3px;}
+  .panel i{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:6px;vertical-align:-1px;}
+  /* topbar */
+  #topbar{position:absolute;top:10px;left:52px;z-index:1000;background:rgba(255,255,255,.95);padding:8px 12px;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.25);font:13px/1.6 sans-serif;}
+  #topbar a{margin-right:8px;text-decoration:none;color:#0d537f;}
+  #topbar b{color:#333;margin-right:4px;}
+  #restorebtn{background:#0d537f;color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font:13px sans-serif;margin-left:6px;}
+  #catFilter{padding:6px 8px;border:1px solid #ccc;border-radius:6px;font:13px sans-serif;margin-left:6px;max-width:170px;}
+  #exportbtn{background:#01774b;color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font:13px sans-serif;margin-left:6px;}
+  .del-row{margin:4px 0 2px;}
+  .del-note{font-size:11px;color:#999;margin-left:8px;line-height:1.5;vertical-align:middle;}
+  #addbtn{background:#01774b;color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font:13px sans-serif;margin-left:8px;}
+  #status{font-size:12px;color:#666;}
+  /* popup */
+  .leaflet-popup-content{margin:0!important;}
+  #detail{width:300px;max-height:70vh;overflow-y:auto;padding:12px;box-sizing:border-box;position:absolute;z-index:1001;background:#fff;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.3);}
+  #detail h3{margin:0 0 2px;font-size:16px;}
+  #detail .sub{color:#666;font-size:12px;margin-bottom:8px;}
+  #detail textarea{width:100%;min-height:70px;box-sizing:border-box;border:1px solid #ccc;border-radius:6px;padding:6px;font:13px/1.5 sans-serif;margin:6px 0;}
+  #detail .lbl{font-size:12px;color:#555;margin:8px 0 2px;font-weight:bold;}
+  .btn{display:inline-block;border:none;border-radius:6px;padding:7px 12px;font:13px sans-serif;cursor:pointer;}
+  .btn-green{background:#01774b;color:#fff;}
+  .btn-gray{background:#e0e0e0;color:#333;}
+  .btn-red{background:#c0392b;color:#fff;}
+  .pos-row{margin:4px 0;}
+  .pos-row .btn{margin-right:6px;}
+  .adj-marker{cursor:grab;}
+  .adj-marker:active{cursor:grabbing;}
+  .drag-handle{cursor:move;user-select:none;-webkit-user-select:none;border-bottom:1px solid #eee;padding-bottom:6px;margin-bottom:8px;}
+  .drag-handle h3{margin:0 0 2px;font-size:16px;cursor:move;}
+  #placeBar{position:absolute;top:52px;left:52px;z-index:1200;background:rgba(255,255,255,.97);padding:9px 12px;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.3);font:13px/1.6 sans-serif;}
+  #placeBar b{color:#c0392b;}
+  #placeBar button{margin-left:10px;}
+  #newPointDialog{position:absolute;top:70px;right:12px;z-index:1200;width:280px;background:#fff;border-radius:10px;padding:14px;box-shadow:0 2px 12px rgba(0,0,0,.32);font:13px/1.6 sans-serif;}
+  #newPointDialog .np-title{font-size:15px;font-weight:bold;margin-bottom:6px;color:#222;}
+  #newPointDialog select,#newPointDialog input[type=text]{width:100%;box-sizing:border-box;padding:6px;border:1px solid #ccc;border-radius:6px;font:13px sans-serif;margin:2px 0 6px;}
+  #newPointDialog .np-actions{margin-top:8px;text-align:right;}
+  #newPointDialog .np-actions .btn{margin-left:6px;}
+  #newPointDialog .sub{color:#666;font-size:12px;}
+  .np-color{font-size:12px;color:#555;margin:2px 0 6px;}
+  .np-color i{display:inline-block;width:14px;height:14px;border-radius:50%;vertical-align:-2px;margin-left:4px;border:1px solid #bbb;}
+  #newPointDialog button:disabled{opacity:.5;cursor:not-allowed;}
+  .crosshair{cursor:crosshair!important;}
+  .new-dot-drag{cursor:grab;}
+  .upload-row{margin:6px 0;}
+  #fileInput{font:12px sans-serif;}
+  #photoList{margin-top:6px;}
+  .photo-item{position:relative;margin-bottom:8px;text-align:center;}
+  .photo-item img{width:100%;border-radius:6px;display:block;cursor:pointer;}
+  .photo-item .cap{font-size:11px;color:#888;margin-top:2px;}
+  .photo-item .del{position:absolute;top:4px;right:4px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:50%;width:20px;height:20px;cursor:pointer;line-height:20px;font-size:12px;}
+  #photoViewer{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:none;align-items:center;justify-content:center;flex-direction:column;}
+  #photoViewer img{max-width:92vw;max-height:80vh;border-radius:8px;}
+  #photoViewer .close{color:#fff;margin-top:12px;font:14px sans-serif;cursor:pointer;}
+  .hint{font-size:11px;color:#999;margin-top:8px;line-height:1.5;}
+  .spinner{color:#888;font-size:12px;}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="topbar">
+  <b>深田社区设施点位</b>
+  <a href="#" data-b="vec">高德</a>
+  <a href="#" data-b="sat">卫星</a>
+  <a href="#" data-b="osm">OSM</a>
+  <button id="addbtn">＋ 新增点位</button>
+  <button id="restorebtn">恢复已删除</button>
+  <select id="catFilter"><option value="">全部类型</option></select>
+  <button id="exportbtn">导出记录</button>
+  <span id="status"></span>
+</div>
+
+<!-- 点开点位后的详情弹层 -->
+<div id="detail" hidden>
+  <div class="drag-handle" id="dragHandle">
+    <h3 id="dTitle"></h3>
+    <div class="sub" id="dSub"></div>
+    <div class="sub" id="dCoord"></div>
+  </div>
+
+  <div class="lbl">位置</div>
+  <div class="pos-row">
+    <button class="btn btn-gray" id="adjustBtn">调整位置</button>
+    <button class="btn btn-green" id="savePosBtn" hidden>保存位置</button>
+    <button class="btn btn-red" id="cancelPosBtn" hidden>取消</button>
+    <button class="btn btn-gray" id="resetPosBtn">恢复到默认</button>
+    <span id="posStatus" class="spinner"></span>
+  </div>
+  <div class="hint" id="adjHint" hidden>拖动圆点，或用键盘 ↑↓←→ 移动。保存后坐标会更新。</div>
+
+  <div class="lbl">现场照片</div>
+  <div class="upload-row">
+    <input type="file" id="fileInput" accept="image/*" multiple>
+    <button class="btn btn-green" id="uploadBtn">上传图片</button>
+  </div>
+  <div id="uploadStatus" class="spinner"></div>
+  <div id="photoList"></div>
+
+  <div class="lbl">记录信息</div>
+  <textarea id="noteInput" placeholder="记录设施问题、维修情况、现场备注…"></textarea>
+  <button class="btn btn-green" id="saveNoteBtn">保存记录</button>
+  <span id="saveStatus" class="spinner"></span>
+  <div class="hint">提示：照片与记录已保存到后端（本地 uploads + SQLite），换设备需部署到服务器后共享。</div>
+
+  <div class="lbl">操作</div>
+  <div class="del-row">
+    <button class="btn btn-red" id="deleteBtn">删除点位</button>
+    <span class="del-note">删除后可在左上角「恢复已删除」找回，仅默认点位可恢复。</span>
+  </div>
+</div>
+
+<div id="photoViewer"><img id="pvImg" alt=""><div class="close">关闭 ✕</div></div>
+
+<!-- 放置新模式提示条 -->
+<div id="placeBar" hidden>
+  <b>新增点位：</b>请在要新增设施的位置点一下地图（或拖动已出现的小圆点到目标位置）。<button id="placeCancel" class="btn btn-red">取消</button>
+</div>
+
+<!-- 新增点位：选择类型 -->
+<div id="newPointDialog" hidden>
+  <div class="np-title drag-handle" id="npHandle">新建设施点位（按住此处拖动）</div>
+  <div class="lbl">设施类型</div>
+  <select id="typeSelect">
+    <option value="">— 选择类型 —</option>
+    <option value="路灯">路灯</option>
+    <option value="指示牌">指示牌</option>
+    <option value="垃圾桶">垃圾桶</option>
+    <option value="晾衣架">晾衣架</option>
+    <option value="反光镜">反光镜</option>
+    <option value="宣传栏">宣传栏</option>
+    <option value="灭火器">灭火器</option>
+    <option value="座椅">座椅</option>
+    <option value="__custom__">自定义类型…</option>
+  </select>
+  <input type="text" id="customTypeInput" placeholder="输入自定义设施名称" hidden>
+  <div class="np-color" id="npColor" hidden>标记颜色：<i></i></div>
+  <div class="lbl">坐标</div>
+  <div id="npCoord" class="sub"></div>
+  <div class="np-actions">
+    <button id="npSave" class="btn btn-green" disabled>保存点位</button>
+    <button id="npCancel" class="btn btn-red">取消</button>
+  </div>
+  <div class="hint">保存后即成为普通点位：可拖动调整位置、上传图片、记录信息。</div>
+</div>
+
+<script>
+const CATS = ['路灯','指示牌','垃圾桶','晾衣架','反光镜','宣传栏','灭火器','座椅'];
+const COLORS = {路灯:'#e02020',指示牌:'#0d537f',垃圾桶:'#01774b',晾衣架:'#e87110',反光镜:'#483e52',宣传栏:'#62bc56',灭火器:'#e41961',座椅:'#f4ef6b'};
+// 自定义类型专属颜色：未在 COLORS 里的类别，按名称哈希从色板里固定分配一个颜色
+const EXTRA_PALETTE = ['#8e44ad','#2c3e50','#c0392b','#16a085','#d35400','#7f8c8d','#2980b9','#f39c12','#27ae60','#e84393','#576574','#00b894'];
+const catColorMap = {};   // 类别名 -> 颜色（运行时缓存）
+function getColor(cat){
+  if(COLORS[cat]) return COLORS[cat];
+  if(catColorMap[cat]) return catColorMap[cat];
+  // 哈希 -> 色板
+  let h=0; for(let i=0;i<cat.length;i++){ h=(h*31 + cat.charCodeAt(i))>>>0; }
+  const color = EXTRA_PALETTE[h % EXTRA_PALETTE.length];
+  catColorMap[cat]=color; return color;
+}
+
+const map = L.map('map',{center:[24.4596,118.0942],zoom:16});
+let layer=null;
+function setBase(k){
+  if(layer) map.removeLayer(layer);
+  if(k==='sat') layer=L.tileLayer('https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}',{subdomains:'1234',maxZoom:19,attribution:'高德影像'});
+  else if(k==='osm') layer=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'});
+  else layer=L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{subdomains:'1234',maxZoom:19,attribution:'高德矢量'});
+  layer.addTo(map); layer.bringToBack();
+}
+setBase('vec');
+
+let markers={};
+let currentId=null;
+const detail=document.getElementById('detail');
+
+// 弹窗可拖拽（按住顶部标题拖走，避免挡住要调整的节点）
+let detailAutoPos=true;   // true=自动跟着点位；用户手动拖过后变 false
+const dragHandle=document.getElementById('dragHandle');
+// 通用拖拽：按住 handle 可拖动 el。onDrag 在拖动时回调（用于标记“已手动拖走”）
+function enableDrag(el, handle, onDrag){
+  handle.addEventListener('mousedown', (e)=>{
+    if(e.target.closest('button,input,textarea,a,select')) return;
+    e.preventDefault();
+    const r = el.getBoundingClientRect();
+    const start = {mx:e.clientX, my:e.clientY, left:r.left, top:r.top};
+    const mm = (ev)=>{
+      el.style.left = (start.left + (ev.clientX-start.mx)) + 'px';
+      el.style.top  = (start.top  + (ev.clientY-start.my)) + 'px';
+      if(onDrag) onDrag(ev);
+    };
+    const mu = ()=>{ document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); };
+    document.addEventListener('mousemove', mm);
+    document.addEventListener('mouseup', mu);
+  });
+}
+enableDrag(detail, dragHandle, ()=>{ detailAutoPos=false; });
+
+let currentModified=false;  // 当前点位是否被调整过位置（决定“恢复到默认”是否可用）
+
+function getDetailData(id){
+  fetch('/api/points/'+id).then(r=>r.json()).then(d=>{
+    const p=pointsById[id];
+    document.getElementById('dTitle').textContent = p.category+' · P#'+id;
+    document.getElementById('dSub').textContent = '点位编号 P#'+id;
+    const ov = (typeof d.lon==='number') ? [d.lat,d.lon] : [p.lat,p.lon];
+    document.getElementById('dCoord').textContent = 'GCJ-02 '+ov[0].toFixed(6)+', '+ov[1].toFixed(6);
+    document.getElementById('noteInput').value = d.note||'';
+    renderPhotos(id, d.photos||[]);
+    // 更新“恢复到默认”按钮可用性
+    currentModified = !!d.modified;
+    const rb=document.getElementById('resetPosBtn');
+    if(rb){ rb.disabled = !currentModified; rb.title = currentModified ? '恢复到最初识别的位置' : '当前就是默认位置，无需恢复'; }
+  });
+}
+
+// 实时刷新坐标显示（拖动/键盘移动时调用）
+function updateCoordDisplay(lat, lon){
+  const el=document.getElementById('dCoord');
+  if(el) el.textContent = 'GCJ-02 '+lat.toFixed(6)+', '+lon.toFixed(6);
+}
+
+function renderPhotos(id, photos){
+  const el=document.getElementById('photoList');
+  el.innerHTML='';
+  if(!photos.length){ el.innerHTML='<div class="spinner">还没有照片，先上传一张吧。</div>'; return; }
+  photos.forEach(ph=>{
+    const item=document.createElement('div'); item.className='photo-item';
+    const img=document.createElement('img'); img.src=ph.url;
+    img.onclick=()=>{ document.getElementById('pvImg').src=ph.url; document.getElementById('photoViewer').style.display='flex'; };
+    const cap=document.createElement('div'); cap.className='cap'; cap.textContent=(ph.note?ph.note+' · ':'')+ph.uploaded_at;
+    const del=document.createElement('button'); del.className='del'; del.textContent='✕';
+    del.onclick=()=>backendDeletePhoto(id, ph.id, item);
+    item.appendChild(img); item.appendChild(cap); item.appendChild(del);
+    el.appendChild(item);
+  });
+}
+
+function backendDeletePhoto(pointId, photoId, itemEl){
+  fetch('/api/points/'+pointId+'/photos/'+photoId,{method:'DELETE'})
+    .then(r=>r.json()).then(d=>{ if(d.success){ itemEl.remove(); if(!document.querySelector('#photoList .photo-item')){ const el=document.getElementById('photoList'); el.innerHTML='<div class="spinner">还没有照片，先上传一张吧。</div>'; } } });
+}
+
+document.getElementById('uploadBtn').onclick=()=>{
+  const f=document.getElementById('fileInput');
+  if(!f.files.length){ document.getElementById('uploadStatus').textContent='请先选择图片'; return; }
+  const fd=new FormData();
+  for(const file of f.files) fd.append('file', file);
+  const st=document.getElementById('uploadStatus'); st.textContent='上传中…';
+  fetch('/api/points/'+currentId+'/photos',{method:'POST',body:fd})
+    .then(r=>r.json()).then(d=>{
+      if(d.success){ st.textContent='已上传'; f.value=''; getDetailData(currentId); }
+      else { st.textContent='失败：'+(d.error||'未知错误'); }
+    });
+};
+
+document.getElementById('saveNoteBtn').onclick=()=>{
+  const note=document.getElementById('noteInput').value;
+  const st=document.getElementById('saveStatus'); st.textContent='保存中…';
+  fetch('/api/points/'+currentId+'/note',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note})})
+    .then(r=>r.json()).then(d=>{ st.textContent=d.success?'已保存':('失败：'+(d.error||'')); });
+};
+
+document.getElementById('photoViewer').querySelector('.close').onclick=()=>{ document.getElementById('photoViewer').style.display='none'; };
+
+// load points
+let pointsById={};
+let activeFilter='';          // 当前筛选：'' 表示全部
+const legendCtrl=L.control({position:'topright'});
+legendCtrl.onAdd=function(){ const dd=L.DomUtil.create('div','panel'); dd.id='legendBox'; return dd; };
+legendCtrl.addTo(map);
+reloadPoints();   // 初次加载
+
+function openDetail(p){
+  currentId=p.id;
+  detailAutoPos=true;   // 新点位：恢复自动跟随
+  detail.hidden=false;
+  detail.style.position='absolute';
+  detail.style.zIndex='1001';
+  detail.style.background='#fff';
+  detail.style.borderRadius='8px';
+  detail.style.boxShadow='0 2px 10px rgba(0,0,0,.3)';
+  positionAbove(p);
+  getDetailData(p.id);
+}
+
+// 把详情窗放到点位正上方（不遮右上角图例）。用户手动拖走后不再自动跟随。
+function positionAbove(p){
+  if(!detailAutoPos) return;
+  const pt = map.latLngToContainerPoint([p.lat, p.lon]); // 相对地图容器（即视口）像素坐标
+  const w = 300; // #detail 定宽
+  let left = pt.x - w/2;
+  left = Math.max(8, Math.min(left, map.getSize().x - w - 8));
+  detail.style.left = left + 'px';
+  detail.style.top = 'auto';
+  detail.style.bottom = 'auto';
+  detail.style.transform = 'none';
+  // 等渲染完成取真实高度，把底边放在点位上方 ~22px
+  requestAnimationFrame(()=>{
+    const h = detail.offsetHeight || 240;
+    let top = pt.y - h - 22;
+    top = Math.max(8, Math.min(top, map.getSize().y - h - 8));
+    detail.style.top = top + 'px';
+  });
+}
+
+// ============================================================
+//  调整位置（拖动 + 键盘方向键）
+// ============================================================
+let adjMarker=null;         // 拖动用的临时可拖 marker
+let adjId=null;             // 正在调整的点
+let adjKeyHandler=null;
+
+const ADJ_STEP = 0.00002;   // 每按一次方向键移动约 2 米（lat 度）
+
+document.getElementById('adjustBtn').onclick=()=>{
+  const p=pointsById[currentId];
+  if(!p) return;
+  adjId=currentId;
+  // 隐藏原点位，换成可拖动的 marker（兼容 circleMarker 和自定义 marker）
+  setMarkerDim(markers[adjId], true);
+  const ic=L.divIcon({className:'adj-marker',html:'<div style="width:16px;height:16px;border-radius:50%;background:'+(getColor(p.category))+' ;border:3px solid #fff;box-shadow:0 0 0 2px rgba(0,0,0,.35)"></div>',iconSize:[22,22],iconAnchor:[11,11]});
+  adjMarker=L.marker([p.lat,p.lon],{icon:ic,draggable:true,bubblingMouseEvents:false}).addTo(map);
+  adjMarker.on('drag', ()=>{ const ll=adjMarker.getLatLng(); updateCoordDisplay(ll.lat, ll.lng); });
+  adjMarker.on('dragend', ()=>{ const ll=adjMarker.getLatLng(); updateCoordDisplay(ll.lat, ll.lng); });
+
+  // 键盘方向键
+  adjKeyHandler=(e)=>{
+    if(adjId!==currentId) return;
+    const k=e.key;
+    if(!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(k)) return;
+    e.preventDefault();
+    const ll=adjMarker.getLatLng();
+    let nlat=ll.lat, nlon=ll.lng;
+    if(k==='ArrowUp') nlat+=ADJ_STEP;
+    else if(k==='ArrowDown') nlat-=ADJ_STEP;
+    else if(k==='ArrowLeft') nlon-=ADJ_STEP/Math.cos(ll.lat*Math.PI/180);
+    else if(k==='ArrowRight') nlon+=ADJ_STEP/Math.cos(ll.lat*Math.PI/180);
+    adjMarker.setLatLng([nlat,nlon]);
+    updateCoordDisplay(nlat,nlon);
+  };
+  document.addEventListener('keydown', adjKeyHandler);
+
+  document.getElementById('adjustBtn').hidden=true;
+  document.getElementById('savePosBtn').hidden=false;
+  document.getElementById('cancelPosBtn').hidden=false;
+  document.getElementById('adjHint').hidden=false;
+  document.getElementById('posStatus').textContent='';
+};
+
+function endAdjust(){
+  if(adjMarker){ map.removeLayer(adjMarker); adjMarker=null; }
+  if(adjKeyHandler){ document.removeEventListener('keydown', adjKeyHandler); adjKeyHandler=null; }
+  if(adjId) setMarkerDim(markers[adjId], false);
+  document.getElementById('adjustBtn').hidden=false;
+  document.getElementById('savePosBtn').hidden=true;
+  document.getElementById('cancelPosBtn').hidden=true;
+  document.getElementById('adjHint').hidden=true;
+  adjId=null;
+}
+
+// 调整位置时，把原点位调成半透明/还原。
+// circleMarker：要同时降 opacity(描边) 和 fillOpacity(填充)，否则看着像复制。
+// marker：降 setOpacity。
+function setMarkerDim(mk, dim){
+  if(!mk) return;
+  if(dim){
+    try{ if(mk.setStyle) mk.setStyle({opacity:0.18, fillOpacity:0.18}); }catch(e){}
+    try{ if(mk.setOpacity) mk.setOpacity(0.18); }catch(e){}
+  } else {
+    try{ if(mk.setStyle) mk.setStyle({opacity:0.92, fillOpacity:0.92}); }catch(e){}
+    try{ if(mk.setOpacity) mk.setOpacity(1.0); }catch(e){}
+  }
+}
+
+document.getElementById('savePosBtn').onclick=()=>{
+  if(!adjMarker) return;
+  const ll=adjMarker.getLatLng();
+  const pid=currentId;
+  const st=document.getElementById('posStatus'); st.textContent='保存中…';
+  fetch('/api/points/'+pid+'/position',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({lon:+ll.lng.toFixed(6),lat:+ll.lat.toFixed(6)})})
+    .then(r=>r.json()).then(d=>{
+      if(d.success){
+        // 同步本地 pointsById 与地图圆点
+        const p=pointsById[pid];
+        if(p){ p.lat=d.lat; p.lon=d.lon; }
+        if(markers[pid]) markers[pid].setLatLng([d.lat,d.lon]);
+        st.textContent='已保存'; updateCoordDisplay(d.lat,d.lon);
+        endAdjust();
+        // 重新拉取详情，刷新 currentModified（否则“恢复到默认”按钮仍是禁用态）
+        getDetailData(pid);
+        setTimeout(()=>{ document.getElementById('posStatus').textContent=''; },1500);
+      } else { st.textContent='失败：'+(d.error||''); }
+    });
+};
+
+document.getElementById('cancelPosBtn').onclick=()=>{
+  // 取消：恢复原圆点位置
+  if(adjId && markers[adjId]){
+    const p=pointsById[adjId];
+    if(p) markers[adjId].setLatLng([p.lat,p.lon]);
+  }
+  endAdjust();
+  if(currentId) getDetailData(currentId);
+};
+
+document.getElementById('resetPosBtn').onclick=()=>{
+  const pid=currentId;
+  if(!pid) return;
+  if(!currentModified){ document.getElementById('posStatus').textContent='当前就是默认位置'; setTimeout(()=>{document.getElementById('posStatus').textContent='';},1500); return; }
+  const st=document.getElementById('posStatus'); st.textContent='恢复中…';
+  fetch('/api/points/'+pid+'/position',{method:'DELETE'}).then(r=>r.json()).then(d=>{
+    if(d.success){
+      const p=pointsById[pid];
+      if(p){ p.lat=d.lat; p.lon=d.lon; }
+      if(markers[pid]) markers[pid].setLatLng([d.lat,d.lon]);
+      updateCoordDisplay(d.lat,d.lon);
+      // 若正处于调整模式，结束并刷新
+      endAdjust();
+      getDetailData(pid);
+      st.textContent='已恢复到默认'; setTimeout(()=>{document.getElementById('posStatus').textContent='';},1500);
+    } else { st.textContent='失败：'+(d.error||''); }
+  });
+};
+
+// 删除点位
+document.getElementById('deleteBtn').onclick=()=>{
+  const pid=currentId;
+  if(!pid) return;
+  if(!confirm('确定删除该点位吗？')) return;
+  const st=document.getElementById('posStatus'); st.textContent='删除中…';
+  fetch('/api/points/'+pid,{method:'DELETE'}).then(r=>r.json()).then(d=>{
+    if(d.success){
+      st.textContent='';
+      // 移除地图 marker
+      if(markers[pid] && map.hasLayer(markers[pid])) map.removeLayer(markers[pid]);
+      delete markers[pid]; delete pointsById[pid];
+      refreshCategories();   // 某类自定义点全删后，图例/筛选不再出现该类别
+      closeDetail();
+      document.getElementById('status').textContent='已删除。点「恢复已删除」可找回（仅默认点位）。';
+      setTimeout(()=>{ if(currentId===null) document.getElementById('status').textContent='共 '+Object.keys(pointsById).length+' 个点位'; },2000);
+    } else { st.textContent='删除失败：'+(d.error||''); }
+  });
+};
+
+// 恢复所有已删除（仅默认点位）
+document.getElementById('restorebtn').onclick=()=>{
+  const st=document.getElementById('status'); st.textContent='恢复中…';
+  fetch('/api/points/restore',{method:'POST'}).then(r=>r.json()).then(d=>{
+    if(d.success){
+      reloadPoints().then(()=>{ document.getElementById('status').textContent='已恢复 '+d.restored+' 个点位（仅默认点位）。'; });
+    } else { document.getElementById('status').textContent='恢复失败：'+(d.error||''); }
+  });
+};
+
+// 导出记录（备注 + 照片）
+document.getElementById('exportbtn').onclick=()=>{
+  const st=document.getElementById('status'); st.textContent='导出中…';
+  fetch('/api/export').then(r=>r.blob()).then(blob=>{
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download='field_records.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    document.getElementById('status').textContent='已导出 field_records.csv';
+    setTimeout(()=>{ document.getElementById('status').textContent=document.getElementById('status').textContent='共 '+Object.keys(pointsById).length+' 个点位'; },2500);
+  }).catch(e=>{ document.getElementById('status').textContent='导出失败：'+e; });
+};
+
+// 关闭详情窗
+function closeDetail(){
+  detail.hidden=true;
+  currentId=null;
+  endAdjust();
+}
+
+// 点击地图空白处关闭；但点击弹窗内部、照片查看器内部不关闭
+map.on('click', (e)=>{
+  if(placeMode) return;   // 新增点放置模式：点地图由放置逻辑处理
+  if(e.originalEvent && e.originalEvent.target){
+    if(detail.contains(e.originalEvent.target)) return;   // 点在弹窗里
+    if(document.getElementById('photoViewer').contains(e.originalEvent.target)) return; // 点在照片查看器里
+  }
+  closeDetail();
+});
+
+// 弹窗内部点击不向外冒泡（双重保险，且方便以后在弹窗上加交互）
+detail.addEventListener('click', (e)=> e.stopPropagation());
+
+// 地图移动/缩放时，弹窗跟随点位重新定位
+map.on('move zoom', ()=>{
+  if(!detail.hidden && currentId && pointsById[currentId]){
+    positionAbove(pointsById[currentId]);
+  }
+});
+
+// ============================================================
+//  新增点位（放置 + 选类型 + 保存）
+// ============================================================
+let placeMode=false;         // 放置模式
+let newMarker=null;          // 临时落点 marker（可拖动，用自定义图标显眼）
+let newLatLng=null;          // 当前新点位坐标
+
+const placeBar=document.getElementById('placeBar');
+const npDialog=document.getElementById('newPointDialog');
+const npHandle=document.getElementById('npHandle');
+enableDrag(npDialog, npHandle, ()=>{});   // 新点位面板也可拖动，不再挡右上角
+
+function resetNewPointUI(){
+  placeMode=false;
+  map.getContainer().classList.remove('crosshair');
+  placeBar.hidden=true;
+  npDialog.hidden=true;
+  if(newMarker){ map.removeLayer(newMarker); newMarker=null; }
+  newLatLng=null;
+  document.getElementById('typeSelect').value='';
+  document.getElementById('customTypeInput').value='';
+  document.getElementById('customTypeInput').hidden=true;
+  document.getElementById('npSave').disabled=true;
+  document.getElementById('addbtn').textContent='＋ 新增点位';
+}
+
+document.getElementById('addbtn').onclick=()=>{
+  if(placeMode){ resetNewPointUI(); return; }
+  placeMode=true;
+  detail.hidden=true; endAdjust();
+  map.getContainer().classList.add('crosshair');
+  placeBar.hidden=false; npDialog.hidden=true;
+  document.getElementById('addbtn').textContent='点击地图放置…';
+};
+
+document.getElementById('placeCancel').onclick=resetNewPointUI;
+document.getElementById('npCancel').onclick=resetNewPointUI;
+
+// 放置模式：点地图落一个可拖动的新点，弹出选类型
+function mapPlaceHandler(e){
+  if(!placeMode) return;
+  const latlng=e.latlng;
+  newLatLng={lat:latlng.lat, lng:latlng.lng};
+  const ic=L.divIcon({className:'new-dot-drag',html:'<div style="width:18px;height:18px;border-radius:50%;background:#333;border:3px solid #fff;box-shadow:0 0 0 2px rgba(0,0,0,.4)"></div>',iconSize:[24,24],iconAnchor:[12,12]});
+  if(newMarker) map.removeLayer(newMarker);
+  newMarker=L.marker(latlng,{icon:ic,draggable:true}).addTo(map);
+  newMarker.on('drag', ()=>{ const ll=newMarker.getLatLng(); newLatLng={lat:ll.lat,lng:ll.lng}; updateNpCoord(); });
+  newMarker.on('dragend', ()=>{ const ll=newMarker.getLatLng(); newLatLng={lat:ll.lat,lng:ll.lng}; updateNpCoord(); });
+  // 关闭放置提示，打开类型对话框
+  placeMode=false;
+  map.getContainer().classList.remove('crosshair');
+  placeBar.hidden=true;
+  document.getElementById('addbtn').textContent='＋ 新增点位';
+  openNpDialog();
+}
+map.on('click', mapPlaceHandler);   // 与上面的 close 处理器并存：placeMode 时由它接管
+
+function updateNpCoord(){
+  if(newLatLng) document.getElementById('npCoord').textContent='GCJ-02 '+newLatLng.lat.toFixed(6)+', '+newLatLng.lng.toFixed(6);
+}
+
+function openNpDialog(){
+  npDialog.hidden=false;
+  const cx=map.getSize().x-300;
+  npDialog.style.left=(cx>8?cx:8)+'px';
+  npDialog.style.top='70px';
+  updateNpCoord();
+}
+
+function updateNpColor(){
+  const ts=document.getElementById('typeSelect');
+  const cust=document.getElementById('customTypeInput');
+  const box=document.getElementById('npColor');
+  const sw=box?box.querySelector('i'):null;
+  let cat='';
+  if(ts.value==='__custom__') cat=cust.value.trim();
+  else cat=ts.value;
+  if(!cat){ if(box) box.hidden=true; return; }
+  const color=getColor(cat);
+  if(box){ box.hidden=false; if(sw) sw.style.background=color; }
+}
+
+document.getElementById('typeSelect').onchange=()=>{
+  const v=document.getElementById('typeSelect').value;
+  document.getElementById('customTypeInput').hidden = (v!=='__custom__');
+  document.getElementById('npSave').disabled = !( v || v==='__custom__' );
+  if(v==='__custom__') document.getElementById('npSave').disabled = true;  // 需填自定义名才可保存
+  updateNpColor();
+};
+
+document.getElementById('customTypeInput').oninput=()=>{
+  if(document.getElementById('typeSelect').value==='__custom__'){
+    document.getElementById('npSave').disabled = !document.getElementById('customTypeInput').value.trim();
+  }
+  updateNpColor();
+};
+
+document.getElementById('npSave').onclick=()=>{
+  if(!newLatLng){ return; }
+  const ts=document.getElementById('typeSelect');
+  let cat='';
+  if(ts.value==='__custom__') cat=document.getElementById('customTypeInput').value.trim();
+  else cat=ts.value;
+  if(!cat){ return; }
+  const st=document.getElementById('npCoord');
+  fetch('/api/points',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({category:cat, lon:+newLatLng.lng.toFixed(6), lat:+newLatLng.lat.toFixed(6)})})
+    .then(r=>r.json()).then(d=>{
+      if(d.success){
+        resetNewPointUI();
+        reloadPoints();   // 重新拉取点位并渲染
+        openDetailById(d.id);   // 打开新点位详情（含调整/上传/记录）
+      } else { st.textContent='保存失败：'+(d.error||''); }
+    });
+};
+
+// 重新加载所有点位并重建 marker
+function reloadPoints(){
+  return fetch('/api/points').then(r=>r.json()).then(d=>{
+    pointsById={};
+    // 先移除旧 marker
+    Object.keys(markers).forEach(k=>{ if(map.hasLayer(markers[k])) map.removeLayer(markers[k]); });
+    markers={};
+
+    // 收集所有出现的类别（含自定义）
+    const catSet = new Set();
+    d.points.forEach(p=> catSet.add(p.category));
+
+    d.points.forEach(p=>{
+      pointsById[p.id]=p;
+      const color = getColor(p.category);
+      let mk;
+      if(COLORS[p.category]){
+        mk=L.circleMarker([p.lat,p.lon],{radius:5.5,color:color,fillColor:color,fillOpacity:.92,weight:1,bubblingMouseEvents:false});
+      } else {
+        // 自定义类型：用专属颜色的菱形标记
+        const ic=L.divIcon({className:'',html:'<div style="width:16px;height:16px;background:'+color+';border:2px solid #fff;box-shadow:0 0 0 2px rgba(0,0,0,.4);transform:rotate(45deg);border-radius:2px"></div>',iconSize:[20,20],iconAnchor:[10,10]});
+        mk=L.marker([p.lat,p.lon],{icon:ic,bubblingMouseEvents:false});
+      }
+      markers[p.id]=mk;
+      mk.addTo(map);
+      mk.on('click',()=>{ openDetail(p); });
+    });
+
+    buildLegend(catSet);
+    buildFilterOptions(catSet);
+    applyFilter();
+    document.getElementById('status').textContent='共 '+d.points.length+' 个点位';
+  });
+}
+
+// 从当前 pointsById 里重新统计类别，刷新图例与筛选（删除某类最后一个点后，该类就从图例/筛选消失）
+function refreshCategories(){
+  const catSet = new Set();
+  Object.values(pointsById).forEach(p=>{ if(typeof p==='object') catSet.add(p.category); });
+  buildLegend(catSet);
+  buildFilterOptions(catSet);
+  applyFilter();
+}
+
+// 动态图例（含自定义类型，用它专属颜色）
+function buildLegend(catSet){
+  const box=document.getElementById('legendBox');
+  if(!box) return;
+  const cats=Array.from(catSet);
+  box.innerHTML='<b>分类</b>'+cats.map(c=>('<i style="background:'+getColor(c)+'"></i>'+c)).join('<br>');
+}
+
+// 动态填充顶部筛选下拉框
+function buildFilterOptions(catSet){
+  const sel=document.getElementById('catFilter');
+  if(!sel) return;
+  const cur=sel.value;
+  let html='<option value="">全部类型</option>';
+  Array.from(catSet).sort().forEach(c=>{
+    html+='<option value="'+c.replace(/"/g,'&quot;')+'">'+c+'</option>';
+  });
+  sel.innerHTML=html;
+  sel.value = (cur && catSet.has(cur)) ? cur : '';
+}
+
+// 按当前筛选显示/隐藏 marker
+function applyFilter(){
+  Object.keys(markers).forEach(id=>{
+    const p=pointsById[id];
+    if(!p) return;
+    const show = (!activeFilter) || (p.category===activeFilter);
+    const mk=markers[id];
+    if(map.hasLayer(mk)!==show){
+      if(show) mk.addTo(map); else map.removeLayer(mk);
+    }
+  });
+}
+
+document.getElementById('catFilter').onchange=(e)=>{
+  activeFilter=e.target.value;
+  applyFilter();
+};
+
+function openDetailById(id){
+  const p=pointsById[id];
+  if(p) openDetail(p);
+}
+
+document.querySelectorAll('#topbar a[data-b]').forEach(x=>x.onclick=e=>{e.preventDefault();setBase(x.dataset.b);});
+</script>
+</body>
+</html>

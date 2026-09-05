@@ -1,0 +1,18 @@
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 数据库（本地）
+field.db
+*.db
+*.sqlite
+
+# 密钥/凭据（绝不能提交）
+*_token.py
+pa_deploy.py
+*.token
+.env
+
+# 本地运行时
+uploads/
